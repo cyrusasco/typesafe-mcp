@@ -1,0 +1,11 @@
+{
+  "name": "typesafe-local",
+  "description": "Local marketplace exposing the typesafe-dispatch plugin (TypeSafe-gated dispatch pipeline for ZCode).",
+  "plugins": [
+    {
+      "name": "typesafe-dispatch",
+      "source": "./plugin",
+      "description": "Self-contained plugin: ts_ask/ts_decide/ts_safety/ts_feasible/ts_ping MCP tools + typesafe-dispatch skill (Battery #1 routing pilot). Operational data (ledger/.env/live registry) resolves to the marketplace root when present, else in-plugin defaults."
+    }
+  ]
+}

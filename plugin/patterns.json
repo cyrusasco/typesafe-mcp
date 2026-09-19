@@ -1,0 +1,30 @@
+{
+  "redaction": {
+    "note": "Applied to every ts_ask payload (state + questions) before egress to the TypeSafe API. All string-value matches are replaced with [REDACTED]. Only the COUNT is recorded in the ledger — never the content.",
+    "regexes": [
+      { "name": "sk_style_key", "pattern": "\\b(sk-[A-Za-z0-9_-]{8,})\\b", "flags": "" },
+      { "name": "keyval_secret", "pattern": "(api[_-]?key|token|secret|password)\\s*[:=]\\s*\\S+", "flags": "i" },
+      { "name": "bearer_token", "pattern": "bearer\\s+[A-Za-z0-9._~+/-]{8,}", "flags": "i" },
+      { "name": "aws_access_key", "pattern": "\\b(AKIA|ASIA)[0-9A-Z]{16}\\b", "flags": "" }
+    ]
+  },
+  "destructive": {
+    "note": "ts_safety runs these as DETERMINISTIC code — NEVER TypeSafe. Starter set; extend freely (name + pattern + optional flags). Advisory output only: destructive + not user-confirmed => always ask the user.",
+    "regexes": [
+      { "name": "rm_rf", "pattern": "\\brm\\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)\\b", "flags": "i" },
+      { "name": "rd_s", "pattern": "\\brd\\s+/s\\b", "flags": "i" },
+      { "name": "del_s_q", "pattern": "\\bdel\\s+(/s\\s+/q|/q\\s+/s)\\b", "flags": "i" },
+      { "name": "git_push_force", "pattern": "\\bgit\\s+push\\b[^;&|]*\\s(--force(?!-)|-f)\\b", "flags": "i" },
+      { "name": "git_reset_hard", "pattern": "\\bgit\\s+reset\\s+--hard\\b", "flags": "i" },
+      { "name": "sql_drop", "pattern": "\\bdrop\\s+(table|database)\\b", "flags": "i" },
+      { "name": "sql_truncate", "pattern": "\\btruncate\\s+table\\b", "flags": "i" },
+      { "name": "purge_flag", "pattern": "\\s--purge\\b", "flags": "i" },
+      { "name": "format_drive", "pattern": "\\bformat\\s+[a-z]:", "flags": "i" },
+      { "name": "mkfs", "pattern": "\\bmkfs(\\.[a-z0-9]+)?\\b", "flags": "i" },
+      { "name": "remove_item_recursive_force", "pattern": "Remove-Item\\b[^;&|]*(-Recurse[^;&|]*-Force|-Force[^;&|]*-Recurse)", "flags": "i" },
+      { "name": "set_execution_policy", "pattern": "\\bSet-ExecutionPolicy\\b", "flags": "i" },
+      { "name": "chmod_r_777", "pattern": "\\bchmod\\s+-R\\s+777\\b", "flags": "i" },
+      { "name": "pipe_to_shell", "pattern": "\\b(curl|wget)\\b[^;&|]*\\|\\s*(ba|z|da)?sh\\b", "flags": "i" }
+    ]
+  }
+}
