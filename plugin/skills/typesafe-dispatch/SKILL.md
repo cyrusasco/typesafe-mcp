@@ -199,3 +199,46 @@ examples, requires:{env:[],command:[]}, cost, speed, agentic}`. Keep the
 registry **< 8 entries** — two-stage dispatch was deliberately cut. Set
 `requires` honestly; `ts_feasible` uses it as the hard gate. Remember: every
 TS Choice must include an `other` option (no-match escape).
+
+## 10. GUARDED DISPATCH (mid-work 即時監察) — v1.3.0
+
+While a subagent WORKS, a guard checks its consequential actions
+(Bash|Edit|Write) and corrects it IMMEDIATELY when an action is off-spec —
+not after completion. Guard only high-stakes dispatches (user asked, or risk
+judgment says so); everyday subagent runs stay unguarded.
+
+**Spec discipline: write the spec in ENGLISH** (Jev is English-primary; a
+CJK spec misjudges English shell actions — measured). One line + scope.
+
+### A-path — automatic (hook), where the harness fires PreToolUse for subagent sessions
+
+1. Before dispatch: `node scripts/guard-spec.mjs push 'One-line English spec; scope: /only/this/dir'`
+   (FIFO queue: first spec-less subagent session claims it).
+2. The `subagent-guard` hook then runs on every Bash|Edit|Write of that
+   subagent, in order: deterministic destructive patterns → **always block**;
+   read-only Bash → instant allow; otherwise one batched Jev call
+   (`on_spec` + `reversible` Noul). `on_spec ≤ 0.35` → **block, and the block
+   reason IS the correction** (the subagent reads it and self-corrects).
+   3 strikes → stop-and-report. TS degraded/unavailable → allow through
+   (fail-open; destructive is still deterministic-blocked).
+   Every Jev call lands in the ledger (battery `subagent-guard`).
+3. On harnesss where user-level PreToolUse hooks do NOT fire for subagent
+   sessions (ZCode as of 2026-09-20 — under verification), the hook is inert
+   for subagents there; use the B-path instead.
+
+### B-path — main-agent monitor loop (works TODAY on ZCode, no hooks needed)
+
+1. Push the spec as above, then dispatch with `run_in_background: true`.
+2. Poll `TaskOutput(block=false)` every ~15–30s; watch the latest
+   consequential actions in the output.
+3. For each consequential action, run ONE batched judgment
+   (`cli.mjs ask` with the same `on_spec`/`reversible` questions, state =
+   spec + action).
+4. `on_spec ≤ 0.35` → `TaskStop(task_id)` immediately, then
+   `SendMessage(agentId, correction)` — correction = verdict + spec excerpt +
+   what to do instead. The agent resumes with the fix in context.
+5. Three corrections → stop for good and escalate to the user.
+
+(中譯:B-path 就係「你做嘢我隔籬睇」— 你個 subagent 背景行,主 agent 每
+15–30 秒睇一眼,見到離譜動作即刻拉停+糾正,唔使等佢做完先驗收。)
+

@@ -1,5 +1,5 @@
 {
-  "description": "typesafe-dispatch — detect build-shaped/multi-step prompts on UserPromptSubmit and inject a one-line reminder to run the typesafe-dispatch skill (simple requests pass through untouched).",
+  "description": "typesafe-dispatch hooks: (1) UserPromptSubmit — detect build-shaped/multi-step prompts and inject a one-line reminder to run the typesafe-dispatch skill; simple requests pass through untouched. (2) PreToolUse — subagent-guard: while a guarded subagent works, every consequential Bash/Edit/Write is checked (deterministic destructive patterns always block; read-only commands pass; otherwise a Jev on_spec judgment blocks off-spec actions immediately with a corrective reason; 3 strikes stops the subagent). Guard a dispatch by pushing an ENGLISH spec with guard-spec.mjs push '<spec>' before spawning.",
   "hooks": {
     "UserPromptSubmit": [
       {
@@ -7,6 +7,17 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/dispatch-reminder.mjs\""
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/subagent-guard.mjs\""
           }
         ]
       }
