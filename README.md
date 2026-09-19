@@ -181,3 +181,7 @@ success criteria that must be met before Batteries #2/#3 get built.
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+## Pilot log
+
+- **2026-09-20 — full-pipeline E2E (all stages green):** Gate → ts_feasible → Battery #1 (6 questions, 1 call, 833 tok) → ts_decide (one deadband escalate resolved by main LLM per protocol) → guarded background dispatch → subagent (2 tool calls, correct output, ground-truth verified) → Battery #2 verify (format 0.91 / value 0.96 → auto). Total: **1,353 TS tokens, 2 ask calls**. Lessons folded into SKILL.md §2/§10 (MSYS /tmp path trap; deadband-on-immaterial-question resolution).

@@ -55,7 +55,12 @@ you enter the FLOW.
      safer reading when two readings exist.
    - `escalate` → do NOT act on the TS answer: ask the user, or resolve in
      the main LLM with your own reasoning. Escalation is the designed
-     outcome for genuinely unclear work, not a failure.
+     outcome for genuinely unclear work, not a failure. When the overall
+     decision is escalate ONLY because an immaterial question hit the
+     deadband (e.g. `difficulty` when no downstream policy consumes it)
+     while every routing question is auto — resolve in the main LLM and
+     proceed, stating the resolution (ignore uncertainty on unused
+     branches; measured in the 2026-09-20 E2E run).
 6. **Hard-constraint overrides (code beats TS):**
    - `needs_agentic_file_access` = yes but the executor Choice picked a
      non-agentic executor → OVERRIDE to the zcode subagent (zcode-gp) and
@@ -241,4 +246,13 @@ CJK spec misjudges English shell actions — measured). One line + scope.
 
 (中譯:B-path 就係「你做嘢我隔籬睇」— 你個 subagent 背景行,主 agent 每
 15–30 秒睇一眼,見到離譜動作即刻拉停+糾正,唔使等佢做完先驗收。)
+
+**Notes (measured in the 2026-09-20 E2E run):**
+- Payload files for `cli.mjs` must use real Windows paths (`C:/...`), NOT
+  MSYS `/tmp/...` — node does not resolve them (`/tmp` works as a CLI
+  argument via MSYS conversion but breaks inside `node -e` scripts).
+- Full-pipeline cost reference: a complete Gate → feasible → Battery #1 →
+  dispatch → verify run measured **1,353 TS tokens across 2 ask calls**
+  (833 for the 6-question dispatch battery, 520 for the 2-question
+  verification battery), ~1.2s + ~0.7s latency.
 
