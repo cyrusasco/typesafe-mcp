@@ -1,30 +1,94 @@
 # typesafe-mcp
 
-**TypeSafe System One dispatch pipeline as a ZCode plugin**: typed subagent
-routing (Battery #1), deterministic thresholds, destructive-op guard, usage
-ledger. Zero-dependency stdio MCP server (node 18+, plain fetch, node:crypto)
-wrapping the [TypeSafe](https://typesafe.ai) System One API (Jev), plus the
-executor registry and skill for the `typesafe-dispatch` pipeline.
+**TypeSafe System One dispatch pipeline as a multi-target agent plugin** — one
+self-contained `plugin/` ships to **ZCode**, **Claude Code**, and **Codex
+CLI**: typed subagent routing (Battery #1), deterministic thresholds,
+destructive-op guard, usage ledger. Zero-dependency stdio MCP server (node 18+,
+plain fetch, node:crypto) wrapping the [TypeSafe](https://typesafe.ai) System
+One API (Jev), plus the executor registry and skill for the
+`typesafe-dispatch` pipeline.
 
 JSON-RPC 2.0 over stdio, one message per line. The plugin is fully
-self-contained: server, launcher, skill, and default data files all ship
+self-contained: server, launcher, skill, hook, and default data files all ship
 inside `plugin/`.
 
-## Install (users)
+## Install — ZCode
 
 1. In ZCode: **Discover** → **`+`** → add this GitHub repo:
    `https://github.com/cyrusasco/typesafe-mcp`
 2. Install the **typesafe-dispatch** plugin. ZCode wires the `ts_*` MCP tools
    (`ts_ping`, `ts_ask`, `ts_decide`, `ts_safety`, `ts_feasible`) and the
-   `typesafe-dispatch` skill automatically.
-3. **Bring your own TypeSafe API key** — the server degrades gracefully
-   without one (`ts_ask` returns `{mode:"degraded", reason:"no_key"}` and
-   never calls the API). Set it either way:
-   - `TYPESAFE_API_KEY` as a real environment variable (recommended —
-     survives plugin updates), or
-   - a `.env` file next to the installed `server.mjs` (copy
-     `plugin/.env.example`). Optional: point `TYPESAFE_DATA_DIR` at a stable
-     directory so your `.env` + ledger survive plugin-cache refreshes.
+   `typesafe-dispatch` skill automatically (ZCode probes
+   `plugin/.zcode-plugin/plugin.json`).
+3. Bring your own TypeSafe API key — see [API key](#api-key) below.
+
+Optional (ZCode has no plugin hook registration): register a `UserPromptSubmit`
+hook pointing at `node <path-to>/hooks/dispatch-reminder.mjs` (repo root copy;
+the script reads the prompt on stdin and prints JSON `additionalContext`, or
+exits silently for simple requests).
+
+## Install — Claude Code
+
+```
+claude plugin marketplace add cyrusasco/typesafe-mcp
+claude plugin install typesafe-dispatch@typesafe-mcp
+```
+
+Claude Code probes `plugin/.claude-plugin/plugin.json` (manifest, validated
+with `claude plugin validate`) and wires, with no extra steps:
+
+- **MCP server** — `plugin/.mcp.json`: `node ${CLAUDE_PLUGIN_ROOT}/mcp-launcher.mjs`
+- **Skill** — auto-discovered from `plugin/skills/typesafe-dispatch/`
+- **Reminder hook** — `plugin/hooks/hooks.json` registers
+  `hooks/dispatch-reminder.mjs` on `UserPromptSubmit` (build-shaped prompts get
+  a one-line nudge toward the skill; simple prompts stay untouched)
+
+Then bring your own TypeSafe API key — see [API key](#api-key) below.
+
+## Install — Codex CLI
+
+Codex has no plugin system, so two pieces:
+
+1. **Skill** — via the [skills CLI](https://github.com/vercel-labs/skills)
+   (verified: it discovers `typesafe-dispatch` in this repo):
+
+   ```
+   npx skills add cyrusasco/typesafe-mcp --skill typesafe-dispatch
+   ```
+
+   Select **Codex** as the target when prompted (installs into
+   `~/.codex/skills/`; add `-g` for global). Without the CLI, copy
+   `plugin/skills/typesafe-dispatch/` into `~/.codex/skills/typesafe-dispatch/`
+   manually.
+
+2. **MCP server** — add to `~/.codex/config.toml` (stdio; use the path of your
+   clone of this repo, forward slashes on Windows):
+
+   ```toml
+   [mcp_servers.typesafe]
+   command = "node"
+   args = ["<repo>/plugin/server.mjs"]
+   ```
+
+   Set `TYPESAFE_API_KEY` in your environment (or drop a `.env` next to
+   `plugin/server.mjs` — copy `plugin/.env.example`). Without a key the server
+   still starts: `ts_ask` returns `{mode:"degraded", reason:"no_key"}` and
+   never calls the API, while `ts_decide` / `ts_safety` / `ts_feasible` /
+   `ts_ping` work fully offline. Codex has no hook mechanism — the
+   UserPromptSubmit reminder does not apply; invoke the skill (or its GATE)
+   yourself.
+
+## API key
+
+**Bring your own TypeSafe API key** — the server degrades gracefully without
+one (`ts_ask` returns `{mode:"degraded", reason:"no_key"}` and never calls the
+API). Set it either way:
+
+- `TYPESAFE_API_KEY` as a real environment variable (recommended — survives
+  plugin updates), or
+- a `.env` file next to the installed `server.mjs` (copy
+  `plugin/.env.example`). Optional: point `TYPESAFE_DATA_DIR` at a stable
+  directory so your `.env` + ledger survive plugin-cache refreshes.
 
 Key resolution order: `process.env` → `<data dir>/.env` → `<plugin dir>/.env`
 → `~/.claude/settings.json` env block. Values are never logged.
@@ -45,15 +109,16 @@ The data dir holds `ledger/` (append-only usage log — personal, gitignored),
 your data dir to change the executor registry; `ts_feasible` reads it
 automatically.
 
-### Optional: UserPromptSubmit reminder hook
+### UserPromptSubmit reminder hook (details)
 
-The author runs a small hook (`hooks/dispatch-reminder.mjs` in the repo) that
-detects build-shaped prompts and injects a one-line reminder to consult the
-`typesafe-dispatch` skill. It is NOT installed by the plugin. To replicate:
-register a `UserPromptSubmit` hook in your ZCode config pointing at
-`node <path-to>/hooks/dispatch-reminder.mjs` (use your own absolute path —
-the script reads the prompt on stdin and prints JSON `additionalContext`, or
-exits silently for simple requests).
+`plugin/hooks/dispatch-reminder.mjs` detects build-shaped prompts and injects
+a one-line reminder to consult the `typesafe-dispatch` skill:
+
+- **Claude Code** — registered automatically via `plugin/hooks/hooks.json`.
+- **ZCode** — register a `UserPromptSubmit` hook in your config pointing at
+  `node <path-to>/hooks/dispatch-reminder.mjs` (use your own absolute path;
+  a repo-root copy lives in `hooks/`).
+- **Codex CLI** — no hook mechanism; not applicable.
 
 ## Tools
 
@@ -100,6 +165,13 @@ When running from a clone, scripts/ and the live data (`ledger/`, `executors.jso
 `.env`) sit at the repo root; the server inside `plugin/` picks them up via
 rule 2 of the data-dir resolution. `.env` and `ledger/` are gitignored — your
 key and usage history never leave the machine.
+
+Manifest validation (Claude Code target):
+
+```
+claude plugin validate .        # marketplace manifest
+claude plugin validate plugin   # plugin manifest (strict-clean as of v1.2.0)
+```
 
 The `typesafe-dispatch` skill (in `plugin/skills/typesafe-dispatch/SKILL.md`)
 documents the full pipeline: GATE philosophy, Battery #1 template, state

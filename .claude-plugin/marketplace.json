@@ -1,0 +1,19 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "typesafe-mcp",
+  "description": "TypeSafe System One dispatch pipeline — multi-target marketplace (ZCode + Claude Code + Codex CLI): ts_ask/ts_decide/ts_safety/ts_feasible/ts_ping MCP tools, the typesafe-dispatch skill, and a UserPromptSubmit reminder hook.",
+  "owner": {
+    "name": "cyrusasco"
+  },
+  "plugins": [
+    {
+      "name": "typesafe-dispatch",
+      "description": "Self-contained plugin: ts_ask/ts_decide/ts_safety/ts_feasible/ts_ping MCP tools + typesafe-dispatch skill + UserPromptSubmit reminder hook (Battery #1 routing pilot). Operational data (ledger/.env/live registry) resolves to the marketplace root when present, else in-plugin defaults. Bring your own TYPESAFE_API_KEY — degrades gracefully without one.",
+      "source": "./plugin",
+      "author": {
+        "name": "cyrusasco"
+      },
+      "license": "MIT"
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "description": "typesafe-dispatch — detect build-shaped/multi-step prompts on UserPromptSubmit and inject a one-line reminder to run the typesafe-dispatch skill (simple requests pass through untouched).",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/dispatch-reminder.mjs\""
+          }
+        ]
+      }
+    ]
+  }
+}
