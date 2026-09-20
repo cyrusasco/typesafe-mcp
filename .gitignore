@@ -1,2 +1,4 @@
 .env
 ledger/
+skills-index.json
+skills-exclude.json

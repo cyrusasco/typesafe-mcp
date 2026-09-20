@@ -13,7 +13,7 @@
  * `-` reads JSON from stdin. Exit 0 on success, 1 on error, 2 on degraded.
  */
 import fs from "node:fs";
-import { tsPing, tsAsk, tsDecide, tsSafety, tsFeasible } from "../plugin/server.mjs";
+import { tsPing, tsAsk, tsDecide, tsSafety, tsFeasible, tsSuggestSkill } from "../plugin/server.mjs";
 
 const args = process.argv.slice(2);
 const [cmd, ...rest] = args;
@@ -58,8 +58,24 @@ try {
     case "feasible":
       console.log(JSON.stringify(tsFeasible(), null, 2));
       break;
+    case "suggest": {
+      const task = positional.join(" ");
+      if (!task && !flags.require) throw new Error('usage: cli.mjs suggest "task text" [--require skill] [--allow a,b] [--exclude a,b]');
+      const result = await tsSuggestSkill({
+        task: task || `use ${flags.require}`,
+        options: {
+          require: flags.require,
+          allow: flags.allow?.split(",").map((s) => s.trim()).filter(Boolean),
+          exclude: flags.exclude?.split(",").map((s) => s.trim()).filter(Boolean),
+          top_k: flags.top_k,
+        },
+      });
+      console.log(JSON.stringify(result, null, 2));
+      if (result.mode === "degraded") process.exit(2);
+      break;
+    }
     default:
-      throw new Error(`unknown command: ${cmd ?? "(none)"} — use ping|ask|decide|safety|feasible`);
+      throw new Error(`unknown command: ${cmd ?? "(none)"} — use ping|ask|decide|safety|feasible|suggest`);
   }
 } catch (e) {
   process.stderr.write(`cli: ${e?.message ?? e}\n`);

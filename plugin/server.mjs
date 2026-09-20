@@ -478,6 +478,187 @@ export function tsFeasible(args = {}, cfg = loadConfig()) {
   return { feasible, infeasible };
 }
 
+// ------------------------------------------------------------------ skill catalog + skill suggestion (v1.4.0)
+// Two-stage progressive disclosure (official skill_suggestion cookbook + win4r/jev-skill-suggester):
+// stage 1 ranks the WHOLE roster in one Choice (probability distribution = ranking) + needs_skill Noul;
+// stage 2 re-judges the top-k with body excerpts, and may reject all candidates.
+const SKILL_CATALOG_MAX_AGE_MS = 7 * 24 * 3600 * 1000;
+
+function parseFrontmatter(text) {
+  const m = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
+  if (!m) return { name: null, description: "", excerpt: text.trim().slice(0, 400) };
+  let name = null, description = "", key = null, buf = [];
+  const flush = () => { if (key === "description") description = buf.join(" ").trim(); };
+  for (const line of m[1].split(/\r?\n/)) {
+    const km = /^([A-Za-z_-]+):\s*(.*)$/.exec(line);
+    if (km) {
+      flush();
+      key = km[1];
+      const v = km[2].trim();
+      buf = v && v !== ">" && v !== "|" && v !== "{}" ? [v] : [];
+      if (km[1] === "name" && v) name = v;
+    } else if (key && /^\s+\S/.test(line)) buf.push(line.trim());
+  }
+  flush();
+  return {
+    name,
+    description: description.replace(/\s+/g, " ").slice(0, 160),
+    excerpt: text.slice(m[0].length).trim().slice(0, 400),
+  };
+}
+
+function walkSkillDir(dir, out, depth = 0, visited = new Set()) {
+  let real;
+  try { real = fs.realpathSync(dir); } catch { return; }
+  if (visited.has(real)) return; // symlink cycles (gstack junctions)
+  visited.add(real);
+  let entries;
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+  if (entries.some((e) => e.isFile() && e.name === "SKILL.md")) {
+    try {
+      const fm = parseFrontmatter(fs.readFileSync(path.join(dir, "SKILL.md"), "utf8"));
+      const id = path.basename(dir);
+      out.push({ id, name: fm.name || id, description: fm.description, excerpt: fm.excerpt, path: path.join(dir, "SKILL.md") });
+    } catch { /* unreadable skill — skip */ }
+    return;
+  }
+  if (depth >= 2) return;
+  for (const e of entries) {
+    // Windows junctions/symlinks (gstack skills) report as symbolic links, not dirs — follow both
+    if ((e.isDirectory() || e.isSymbolicLink()) && !e.name.includes(".bak") && !e.name.startsWith(".")) {
+      walkSkillDir(path.join(dir, e.name), out, depth + 1, visited);
+    }
+  }
+}
+
+export function skillCatalog(force = false) {
+  const file = path.join(DATA_DIR, "skills-index.json");
+  if (!force) {
+    try {
+      const st = fs.statSync(file);
+      if (Date.now() - st.mtimeMs < SKILL_CATALOG_MAX_AGE_MS) return JSON.parse(fs.readFileSync(file, "utf8"));
+    } catch { /* rebuild */ }
+  }
+  const roots = [path.join(os.homedir(), ".zcode", "skills"), path.join(os.homedir(), ".agents", "skills")];
+  const seen = new Set(), skills = [];
+  for (const root of roots) {
+    const found = [];
+    walkSkillDir(root, found);
+    for (const s of found) if (!seen.has(s.id)) { seen.add(s.id); skills.push(s); }
+  }
+  const index = { builtAt: new Date().toISOString(), count: skills.length, roots, skills };
+  try { fs.writeFileSync(file, JSON.stringify(index, null, 2)); } catch (e) { log(`skills-index write failed: ${e.message}`); }
+  return index;
+}
+
+function loadSkillExcludes() {
+  try { return new Set(JSON.parse(fs.readFileSync(path.join(DATA_DIR, "skills-exclude.json"), "utf8")).excluded ?? []); }
+  catch { return new Set(); }
+}
+
+export async function tsSuggestSkill(args, cfg = loadConfig()) {
+  const task = String(args?.task ?? "").trim();
+  if (!task) throw new Error("ts_suggest_skill: task string required");
+  const opt = args?.options ?? {};
+
+  // user-named skill → local lookup, ZERO API calls (require beats excludes: the boss spoke)
+  if (opt.require) {
+    const cat = skillCatalog();
+    const hit = cat.skills.find((s) => s.id === opt.require || s.name === opt.require);
+    return {
+      mode: "normal", via: "require", api_calls: 0,
+      skill: hit ? { id: hit.id, name: hit.name, path: hit.path } : null,
+      reason: hit ? "user-named skill resolved by local catalog lookup (no API)" : `named skill "${opt.require}" not in catalog`,
+    };
+  }
+
+  const cat = skillCatalog();
+  const excl = new Set([...loadSkillExcludes(), ...(opt.exclude ?? [])]);
+  let roster = cat.skills.filter((s) => !excl.has(s.id) && !excl.has(s.name));
+  if (opt.allow?.length) roster = roster.filter((s) => opt.allow.includes(s.id) || opt.allow.includes(s.name));
+  if (!roster.length) return { mode: "normal", skill: null, api_calls: 0, reason: "roster empty after excludes/allowlist" };
+  const topK = Math.min(Math.max(1, Number(opt.top_k) || 3), Math.min(3, roster.length));
+  const lang = /[\u4e00-\u9fff]/.test(task) ? "cjk" : "en";
+
+  // Stage 1 — rank the whole roster in ONE call (Choice distribution = ranking) + needs_skill Noul
+  const s1 = await tsAsk({
+    state: { task, skills: roster.map((s) => ({ id: s.id, name: s.name, description: s.description })) },
+    questions: {
+      rank: {
+        type: "choice",
+        instructions: "Which of `state.skills` is the single best first-load skill for the task in `state.task`? Judge by each skill's `description`. The probability distribution is reused as a ranking.",
+        criteria: Object.fromEntries(roster.map((s) => [s.id, s.description || s.name])),
+      },
+      needs_skill: {
+        type: "noul",
+        instructions: "true if this task would genuinely benefit from loading one of the listed skills' playbooks first; false if none is relevant (plain translation, small talk, tasks no listed skill covers) and doing it directly is best.",
+      },
+    },
+    options: { battery: "skill-suggest-rank", lang },
+  }, cfg);
+  if (s1.mode !== "normal") return { mode: "degraded", reason: s1.reason ?? s1.error, skill: null, api_calls: 1 };
+
+  const probs = s1.answers.rank?.probabilities ?? {};
+  const ranked = roster.map((s) => ({ s, p: probs[s.id] ?? 0 })).sort((a, b) => b.p - a.p);
+  const needsSkill = s1.answers.needs_skill?.noul ?? 0.5;
+  const rankingTop = ranked.slice(0, topK).map((r) => ({ id: r.s.id, p: +r.p.toFixed(3) }));
+  const top = ranked.slice(0, topK).map((r) => r.s);
+
+  // Stage 2 — re-judge top-k with excerpts; may reject all (doc-sanctioned second request)
+  const s2 = await tsAsk({
+    state: { task, candidates: top.map((s) => ({ id: s.id, name: s.name, description: s.description, instructions_opening: s.excerpt })) },
+    questions: {
+      final: {
+        type: "choice",
+        instructions: "Which candidate skill (if any) should be loaded FIRST for `state.task`? Read each candidate's full `description` and `instructions_opening`. 'none' is a fully valid answer — never force a skill that does not fit.",
+        criteria: { ...Object.fromEntries(top.map((s) => [s.id, s.description || s.name])), none: "No candidate truly fits; do the task directly." },
+      },
+      ...Object.fromEntries(top.map((s) => [`fit_${s.id}`, {
+        type: "noul",
+        instructions: `true if loading skill \`${s.name}\` first would clearly help complete \`state.task\` (its description and instructions opening match the task's needs), false otherwise.`,
+      }])),
+    },
+    options: { battery: "skill-suggest-verify", lang },
+  }, cfg);
+  if (s2.mode !== "normal") return { mode: "degraded", reason: s2.reason ?? s2.error, skill: null, api_calls: 2, ranking_top: rankingTop };
+
+  const choice = s2.answers.final?.choice ?? "none";
+  const conf = s2.answers.final?.confidence ?? 0;
+  // fit-led recommendation (measured 2026-09-20: rosters with several plausible generic skills
+  // split the Choice distribution ~evenly, so confidence can never clear a hard gate — docs:
+  // "low confidence need not invalidate a harmless preference choice"). Confidence is kept as a
+  // near-tie signal only: winner by fit; if runner-up is within 0.10 fit AND conf < 0.65, surface
+  // the tie instead of hiding it (the dispatch soft-line already says "ignore if it doesn't fit").
+  const fits = top
+    .map((s) => ({ id: s.id, fit: s2.answers[`fit_${s.id}`]?.noul ?? 0 }))
+    .sort((a, b) => b.fit - a.fit);
+  let skill = null, fit = null, nearTie = null, reason;
+  if (choice === "none") {
+    reason = "stage-2 rejected all candidates";
+  } else {
+    const best = fits[0], runner = fits[1];
+    if (best.fit >= 0.8) {
+      const s = top.find((x) => x.id === best.id);
+      skill = { id: s.id, name: s.name, path: s.path };
+      fit = best.fit;
+      if (runner && best.fit - runner.fit <= 0.1 && conf < 0.65) {
+        nearTie = runner.id;
+        reason = `fit-led pick ${s.id} (fit ${best.fit.toFixed(2)}); near tie with ${runner.id} (fit ${runner.fit.toFixed(2)}, choice conf ${conf.toFixed(2)}) — soft-line allows the agent to ignore`;
+      } else {
+        reason = `fit ${best.fit.toFixed(2)} ≥ 0.80, choice ${choice} (conf ${conf.toFixed(2)})`;
+      }
+    } else {
+      reason = `best candidate fit ${best.fit.toFixed(2)} < 0.80 (choice was ${choice})`;
+    }
+  }
+  return {
+    mode: "normal", skill, fit: fit === null ? null : +fit.toFixed(2), confidence: +conf.toFixed(2),
+    needs_skill: +needsSkill.toFixed(2), ranking_top: rankingTop, candidates_fit: fits.map((f) => ({ id: f.id, fit: +f.fit.toFixed(2) })),
+    near_tie: nearTie, api_calls: 2,
+    usage: { rank: s1.usage, verify: s2.usage }, latency_ms: (s1.latency_ms ?? 0) + (s2.latency_ms ?? 0), reason,
+  };
+}
+
 // ------------------------------------------------------------------ MCP plumbing (house pattern)
 const TOOLS = [
   {
@@ -537,6 +718,27 @@ const TOOLS = [
       properties: { executors: { type: "array", description: "optional registry array; default reads executors.json" } },
     },
     run: (a) => tsFeasible(a),
+  },
+  {
+    name: "ts_suggest_skill",
+    description: "v1.4.0 skill-suggestion, two TypeSafe requests (cookbook pattern): (1) rank the WHOLE local skill catalog in one Choice (distribution = ranking) + needs_skill Noul; (2) re-judge the top-3 with SKILL.md excerpts, may reject all. Recommends at most ONE skill, only when fit ≥ 0.80 AND final confidence ≥ 0.65; 'no skill' is a first-class answer. options.require = user-named skill → local lookup, ZERO API. options.allow/exclude filter the roster; skills-exclude.json in DATA_DIR persists exclusions (excluded skills are still reachable via require).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        task: { type: "string", description: "the task text the dispatched subagent will execute" },
+        options: {
+          type: "object",
+          properties: {
+            require: { type: "string", description: "user explicitly named this skill — resolve locally, no API" },
+            allow: { type: "array", items: { type: "string" }, description: "restrict candidates to these skill ids/names" },
+            exclude: { type: "array", items: { type: "string" }, description: "drop these ids/names for this call" },
+            top_k: { type: "integer", description: "candidates re-judged in stage 2 (default 3, max 3)" },
+          },
+        },
+      },
+      required: ["task"],
+    },
+    run: (a) => tsSuggestSkill(a),
   },
 ];
 

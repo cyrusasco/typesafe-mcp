@@ -1,6 +1,6 @@
 {
   "name": "typesafe-dispatch",
-  "version": "1.3.1",
+  "version": "1.4.0",
   "description": "TypeSafe-gated dispatch pipeline for ZCode: self-contained plugin (server + launcher + skill + default executor registry and redaction patterns). Operational data (ledger, .env, live executors.json/patterns.json) resolves to TYPESAFE_DATA_DIR, or the parent dir when it holds executors.json, or in-plugin defaults.",
   "author": {
     "name": "cyrusasco"

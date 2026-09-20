@@ -67,10 +67,21 @@ you enter the FLOW.
      note the contradiction to the user.
    - A task outside every feasible executor's `what`/`not_for` → do not
      route it there just because Choice said so.
-7. **Dispatch:** embed the returned TS JSON (answers + usage + call_id)
+7. **Skill suggestion (when dispatching to a subagent):** run
+   `ts_suggest_skill` with the task text (see §11).
+   - User NAMED a skill → `options.require` = that skill (local lookup,
+     ZERO API).
+   - Recommended → add ONE soft line to the dispatch prompt:
+     `Relevant: <skill> (fit X[, near-tie Y]) — load it first; ignore if it
+     does not fit.` and mention the skill in the guard spec.
+   - `skill: null` (with transparent `candidates_fit`) is a first-class
+     answer — measured: small refactor tasks rate review/ponytail ≈ 0.35
+     (they are heavyweight workflows); you may still load one manually on
+     your own judgment.
+8. **Dispatch:** embed the returned TS JSON (answers + usage + call_id)
    **verbatim** into the subagent prompt — the subagent gets the raw
    judgment, not your paraphrase.
-8. **Batteries #2 (verification) and #3 (merge) are PHASE 2/3 — NOT YET
+9. **Batteries #2 (verification) and #3 (merge) are PHASE 2/3 — NOT YET
    ACTIVE. Do not improvise them.** After Battery #1 you act; verification
    comes only when those batteries are built and announced.
 
@@ -255,4 +266,43 @@ CJK spec misjudges English shell actions — measured). One line + scope.
   dispatch → verify run measured **1,353 TS tokens across 2 ask calls**
   (833 for the 6-question dispatch battery, 520 for the 2-question
   verification battery), ~1.2s + ~0.7s latency.
+
+## 11. SKILL SUGGESTION (v1.4.0)
+
+`ts_suggest_skill(task, options)` — two TypeSafe requests, progressive
+disclosure (official skill_suggestion cookbook + win4r/jev-skill-suggester
+pattern):
+
+1. **Rank** the whole local catalog in ONE call: Choice over every skill
+   (the probability distribution IS the ranking) + `needs_skill` Noul.
+2. **Verify** the top-3 with each skill's 400-char excerpt: final Choice
+   (may answer `none`) + per-candidate `fit` Noul.
+
+**Recommendation rule (fit-led, measured):** winner = highest fit ≥ 0.80.
+Choice confidence is NOT a hard gate — generic-candidate rosters split the
+distribution evenly (codex/review/ponytail ≈ 0.33/0.17/0.16, conf 0.49) so a
+confidence gate never clears; docs: "low confidence need not invalidate a
+harmless preference choice". Confidence only SURFACES near-ties (runner-up
+within 0.10 fit AND conf < 0.65 → `near_tie` reported, recommendation still
+issued with the soft-line).
+
+**Acceptance measurements (2026-09-20):**
+- Shopage CSS task → `shopage-modifier` fit 0.95 conf 0.99 ✅
+- Small refactor + review → honest `null` (codex 0.48 / ponytail 0.35 /
+  review 0.35 — heavyweight workflows don't fit small tasks; correct
+  anti-over-loading behavior) ✅
+- Translation task → `null`, needs_skill 0.11 ✅
+- `--require ponytail-review` → local lookup, **0 API calls** ✅
+
+**Options:** `require` (user-named, zero API, bypasses excludes — 建議歸建議,
+老闆點名話事), `allow`/`exclude` (per-call roster filters),
+`skills-exclude.json` in DATA_DIR (persisted exclusions; excluded skills are
+still reachable via require). Ponytail family deliberately NOT excluded
+(user decision 2026-09-20).
+
+**Catalog:** scans `~/.zcode/skills` + `~/.agents/skills` — 79 skills incl.
+Windows junction/symlinked gstack skills (cycle-guarded). Index cached 7
+days in DATA_DIR (`skills-index.json`, gitignored); rebuild with
+`node scripts/skill-catalog.mjs build --force`. Cost per full suggest:
+~2 calls, ~9.4k in / ~0.9k out tokens.
 
