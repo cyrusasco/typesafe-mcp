@@ -3,3 +3,4 @@ ledger/
 skills-index.json
 skills-exclude.json
 tmp/
+dedupe-cache.json

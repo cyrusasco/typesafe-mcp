@@ -228,9 +228,29 @@ function summarizeAnswers(answers) {
   return out;
 }
 
-// ------------------------------------------------------------------ same-payload re-ask dedupe (in-process, v1.5.1)
+// ------------------------------------------------------------------ same-payload re-ask dedupe (v1.5.1; disk-persisted v1.5.2)
+// In-process caches never hit for cli.mjs users (each Bash call = fresh node process —
+// measured 2026-09-22: a 3x same-hash re-ask billed full tokens 3 times). The cache now
+// lives in DATA_DIR/dedupe-cache.json so cross-process re-asks within the TTL hit it.
 const DEDUPE_TTL_MS = 45_000;
-const DEDUPE_CACHE = new Map(); // sha256(state+"\0"+questions) -> { result, at }
+const DEDUPE_MAX = 20;
+const DEDUPE_FILE = () => path.join(DATA_DIR, "dedupe-cache.json");
+function dedupeRead() {
+  try {
+    const m = JSON.parse(fs.readFileSync(DEDUPE_FILE(), "utf8"));
+    const now = Date.now();
+    const out = {};
+    for (const [k, v] of Object.entries(m)) if (now - v.at < DEDUPE_TTL_MS) out[k] = v;
+    return out;
+  } catch { return {}; }
+}
+function dedupePut(key, result) {
+  const m = dedupeRead();
+  m[key] = { at: Date.now(), result };
+  const keys = Object.keys(m).sort((a, b) => m[a].at - m[b].at);
+  for (const k of keys.slice(0, Math.max(0, keys.length - DEDUPE_MAX))) delete m[k];
+  try { fs.writeFileSync(DEDUPE_FILE(), JSON.stringify(m)); } catch { /* best effort */ }
+}
 
 // ------------------------------------------------------------------ circuit breaker (in-process state)
 const breaker = { failures: 0, cooldownUntil: 0 };
@@ -353,7 +373,7 @@ export async function tsAsk(args, cfg = loadConfig()) {
   // handshake re-sending identical payloads 12–27s apart. Key = state+questions BOTH —
   // hashing questions alone would wrongly cache fixed-question/different-state batteries (judge).
   const dedupeKey = sha256(canonicalJson(rState.value) + "\u0000" + canonicalJson(rQuestions.value));
-  const hit = DEDUPE_CACHE.get(dedupeKey);
+  const hit = dedupeRead()[dedupeKey];
   if (hit && Date.now() - hit.at < DEDUPE_TTL_MS) {
     appendLedger(cfg.ledgerDir, {
       ts: new Date().toISOString(), call_id: newCallId(), ...base,
@@ -371,14 +391,17 @@ export async function tsAsk(args, cfg = loadConfig()) {
       throw new Error(`TypeSafe 422 validation (caller bug — fix the request body): ${res.detail}`);
     if (res.kind === "auth")
       throw new Error(`TypeSafe 401: bad API key (check TYPESAFE_API_KEY): ${res.detail}`);
-    // transient service failure → breaker + degraded
+    // transient service failure → breaker + degraded (v1.5.2: keep the response detail so
+    // mystery 4xx/5xx bodies are diagnosable from the ledger instead of just "http 400")
     recordFailure();
+    const detail = String(res.detail ?? "").slice(0, 200);
     appendLedger(cfg.ledgerDir, {
       ts: new Date().toISOString(), call_id, ...base,
       mode: "degraded", model: cfg.model, error: `${res.kind}${res.status ? ` ${res.status}` : ""}`,
+      detail: detail || undefined,
       questions_hash, state_bytes, redactions, latency_ms,
     });
-    return { mode: "degraded", reason: res.kind, status: res.status ?? null, latency_ms, redactions, call_id };
+    return { mode: "degraded", reason: res.kind, status: res.status ?? null, detail: detail || undefined, latency_ms, redactions, call_id };
   }
 
   recordSuccess();
@@ -388,11 +411,7 @@ export async function tsAsk(args, cfg = loadConfig()) {
     mode: "normal", model: res.model, questions_hash, state_bytes, redactions,
     answers_summary: summarizeAnswers(res.answers), usage, latency_ms,
   });
-  DEDUPE_CACHE.set(dedupeKey, {
-    at: Date.now(),
-    result: { mode: "normal", model: res.model, answers: res.answers, usage, latency_ms, redactions, call_id },
-  });
-  if (DEDUPE_CACHE.size > 20) DEDUPE_CACHE.delete(DEDUPE_CACHE.keys().next().value);
+  dedupePut(dedupeKey, { mode: "normal", model: res.model, answers: res.answers, usage, latency_ms, redactions, call_id });
   return { mode: "normal", model: res.model, answers: res.answers, usage, latency_ms, redactions, call_id };
 }
 
