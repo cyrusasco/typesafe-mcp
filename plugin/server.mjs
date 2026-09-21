@@ -228,6 +228,10 @@ function summarizeAnswers(answers) {
   return out;
 }
 
+// ------------------------------------------------------------------ same-payload re-ask dedupe (in-process, v1.5.1)
+const DEDUPE_TTL_MS = 45_000;
+const DEDUPE_CACHE = new Map(); // sha256(state+"\0"+questions) -> { result, at }
+
 // ------------------------------------------------------------------ circuit breaker (in-process state)
 const breaker = { failures: 0, cooldownUntil: 0 };
 
@@ -291,6 +295,8 @@ async function callSystemOne(cfg, state, questions) {
 // ------------------------------------------------------------------ tools
 export function tsPing(cfg = loadConfig()) {
   const u = todayUsage(cfg.ledgerDir);
+  // zero-cost tools leave an audit trace too (v1.5.1: audits kept inferring usage from prose)
+  appendLedger(cfg.ledgerDir, { ts: new Date().toISOString(), call_id: newCallId(), tool: "ts_ping", mode: "normal" });
   return {
     ok: true,
     has_key: Boolean(cfg.key),
@@ -343,6 +349,19 @@ export async function tsAsk(args, cfg = loadConfig()) {
   const questions_hash = sha256(canonicalJson(questions)); // template-drift detection
   const call_id = newCallId();
 
+  // same-payload re-ask dedupe (v1.5.1): sessions showed an ask→schema-reject→re-ask
+  // handshake re-sending identical payloads 12–27s apart. Key = state+questions BOTH —
+  // hashing questions alone would wrongly cache fixed-question/different-state batteries (judge).
+  const dedupeKey = sha256(canonicalJson(rState.value) + "\u0000" + canonicalJson(rQuestions.value));
+  const hit = DEDUPE_CACHE.get(dedupeKey);
+  if (hit && Date.now() - hit.at < DEDUPE_TTL_MS) {
+    appendLedger(cfg.ledgerDir, {
+      ts: new Date().toISOString(), call_id: newCallId(), ...base,
+      mode: "normal", model: hit.result.model, questions_hash, state_bytes, redactions, cached: true,
+    });
+    return { ...hit.result, cached: true };
+  }
+
   const t0 = Date.now();
   const res = await callSystemOne(cfg, rState.value, rQuestions.value);
   const latency_ms = Date.now() - t0;
@@ -369,6 +388,11 @@ export async function tsAsk(args, cfg = loadConfig()) {
     mode: "normal", model: res.model, questions_hash, state_bytes, redactions,
     answers_summary: summarizeAnswers(res.answers), usage, latency_ms,
   });
+  DEDUPE_CACHE.set(dedupeKey, {
+    at: Date.now(),
+    result: { mode: "normal", model: res.model, answers: res.answers, usage, latency_ms, redactions, call_id },
+  });
+  if (DEDUPE_CACHE.size > 20) DEDUPE_CACHE.delete(DEDUPE_CACHE.keys().next().value);
   return { mode: "normal", model: res.model, answers: res.answers, usage, latency_ms, redactions, call_id };
 }
 
@@ -433,6 +457,10 @@ export function tsSafety(args, cfg = loadConfig()) {
   const text = args?.text;
   if (typeof text !== "string" || !text) throw new Error("ts_safety: text string required");
   const matched = cfg.patterns.destructive.filter((r) => r.re.test(text)).map((r) => r.name);
+  appendLedger(cfg.ledgerDir, {
+    ts: new Date().toISOString(), call_id: newCallId(), tool: "ts_safety", mode: "normal",
+    destructive: matched.length > 0, matched: matched.slice(0, 5),
+  }); // zero-cost tool, but audits need the trace (v1.5.1)
   return {
     destructive: matched.length > 0,
     matched,
@@ -475,6 +503,10 @@ export function tsFeasible(args = {}, cfg = loadConfig()) {
     if (reasons.length) infeasible.push({ id: e.id, reason: reasons.join("; ") });
     else feasible.push(e.id);
   }
+  appendLedger(cfg.ledgerDir, {
+    ts: new Date().toISOString(), call_id: newCallId(), tool: "ts_feasible", mode: "normal",
+    feasible, infeasible: infeasible.map((i) => i.id),
+  }); // zero-cost tool, but audits need the trace (v1.5.1)
   return { feasible, infeasible };
 }
 
