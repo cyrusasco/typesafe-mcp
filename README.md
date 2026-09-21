@@ -1,5 +1,10 @@
 # typesafe-mcp
 
+<p align="center"><img src="docs/pipeline.svg" alt="typesafe-dispatch pipeline: Gate → ts_feasible → Battery #1 → ts_decide → dispatch (+skill suggestion) → guarded subagent → verify → report, with a JSONL ledger under everything" width="880"></p>
+
+**What is this?** A ZCode / Claude Code / Codex plugin that gates multi-agent dispatch with TypeSafe System One (Jev) typed judgments instead of vibes: one batched ~1s call decides workflow, executor, risk and difficulty; a 79-skill catalog two-stage suggests which skill to load; a mid-work guard stops a subagent the moment an action goes off-spec (on_spec ≤ 0.35); every judgment lands in a replayable JSONL ledger. Simple requests bypass everything (GATE).
+
+
 **TypeSafe System One dispatch pipeline as a multi-target agent plugin** — one
 self-contained `plugin/` ships to **ZCode**, **Claude Code**, and **Codex
 CLI**: typed subagent routing (Battery #1), deterministic thresholds,
@@ -186,3 +191,4 @@ MIT — see [LICENSE](LICENSE).
 
 - **2026-09-20 — full-pipeline E2E (all stages green):** Gate → ts_feasible → Battery #1 (6 questions, 1 call, 833 tok) → ts_decide (one deadband escalate resolved by main LLM per protocol) → guarded background dispatch → subagent (2 tool calls, correct output, ground-truth verified) → Battery #2 verify (format 0.91 / value 0.96 → auto). Total: **1,353 TS tokens, 2 ask calls**. Lessons folded into SKILL.md §2/§10 (MSYS /tmp path trap; deadband-on-immaterial-question resolution).
 - **2026-09-20 — v1.4.0 skill-suggestion shipped (ts_suggest_skill):** two-request progressive disclosure over the 79-skill local catalog (junction/symlink-aware). Acceptance: Shopage CSS → shopage-modifier (fit 0.95) ✅; small refactor → honest null (review/ponytail fits ≈0.35 — heavyweight workflows, correct anti-over-load) ✅; translation → null (needs_skill 0.11) ✅; --require → 0 API calls ✅. Fit-led rule after measurement: Choice confidence cannot gate generic-candidate rosters (docs: low confidence ≠ invalid preference); confidence now only surfaces near-ties. ~9.4k in / 0.9k out tokens per suggest.
+- **2026-09-21 — v1.5.0:** A-path verdict finalized: ZCode confirmed NOT firing PreToolUse for subagent tool calls (2nd experiment: queued spec + off-scope Write sailed through) — mid-work guard on ZCode is the B-path monitor, now ONE command (`cli.mjs judge "<spec>" "<action>"` → proceed/inspect/correct + ready-made directive; measured off-spec 0.01 → correct). Injection reminder now carries the guard protocol. Skill-suggestion confirmed working in real use (audit of 105 ledger lines). README got a pipeline diagram (docs/pipeline.svg).

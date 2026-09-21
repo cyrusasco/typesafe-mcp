@@ -1,0 +1,12 @@
+{
+  "operation": "Append up to 71 new rows and fill empty cells (never overwrite non-empty cells) into Sheet1 of live production Google Sheet 'Aug 26' (id 1XghkDE9) via a temporary bound-Apps-Script migration endpoint, then remove the endpoint and redeploy. Legacy APRIL sheet (1BdFoO) stays read-only. AUG Sheet1 will be backed up (full CSV dump) before any write.",
+  "guards": [
+    "Backup AUG Sheet1 full CSV before writes",
+    "Append-only + fill-empty-only; conflicting non-empty cells are never written, only reported",
+    "Temporary migration function removed + hash-verified + redeployed clean afterwards",
+    "Post-write verification re-reads AUG and diffs against expected result",
+    "User (Cyrus) gives explicit GO before any write"
+  ],
+  "blast_radius": "76 candidate rows into a 277-row production sheet used by daily TW logistics; rollback = restore from CSV backup",
+  "reversible": "true (CSV backup restore)"
+}

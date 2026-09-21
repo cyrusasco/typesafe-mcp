@@ -13,7 +13,7 @@
  * `-` reads JSON from stdin. Exit 0 on success, 1 on error, 2 on degraded.
  */
 import fs from "node:fs";
-import { tsPing, tsAsk, tsDecide, tsSafety, tsFeasible, tsSuggestSkill } from "../plugin/server.mjs";
+import { tsPing, tsAsk, tsDecide, tsSafety, tsFeasible, tsSuggestSkill, tsJudgeAction } from "../plugin/server.mjs";
 
 const args = process.argv.slice(2);
 const [cmd, ...rest] = args;
@@ -74,8 +74,17 @@ try {
       if (result.mode === "degraded") process.exit(2);
       break;
     }
+    case "judge": {
+      // one-command mid-work verdict: judge '<spec>' '<action>' [--tool Write]
+      const [spec, action] = positional;
+      if (!spec || !action) throw new Error('usage: cli.mjs judge "<task spec>" "<action text>" [--tool Bash|Write|Edit]');
+      const result = await tsJudgeAction({ spec, action, tool: flags.tool });
+      console.log(JSON.stringify(result, null, 2));
+      if (result.mode === "degraded") process.exit(2);
+      break;
+    }
     default:
-      throw new Error(`unknown command: ${cmd ?? "(none)"} — use ping|ask|decide|safety|feasible|suggest`);
+      throw new Error(`unknown command: ${cmd ?? "(none)"} — use ping|ask|decide|safety|feasible|suggest|judge`);
   }
 } catch (e) {
   process.stderr.write(`cli: ${e?.message ?? e}\n`);

@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="500" viewBox="0 0 960 500" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#4b5563"/>
+    </marker>
+    <marker id="am" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#d97706"/>
+    </marker>
+  </defs>
+
+  <text x="480" y="28" text-anchor="middle" font-size="19" font-weight="700" fill="#111827">typesafe-dispatch</text>
+  <text x="480" y="47" text-anchor="middle" font-size="12" fill="#6b7280">TypeSafe (Jev) typed judgments gate every decision — code owns the workflow</text>
+
+  <!-- Row 1: gate -->
+  <rect x="30" y="72" width="130" height="46" rx="8" fill="#ffffff" stroke="#9ca3af" stroke-width="1.5"/>
+  <text x="95" y="99" text-anchor="middle" font-size="12.5" font-weight="600" fill="#111827">USER PROMPT</text>
+
+  <rect x="215" y="72" width="120" height="46" rx="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.8"/>
+  <text x="275" y="92" text-anchor="middle" font-size="12.5" font-weight="700" fill="#3730a3">GATE</text>
+  <text x="275" y="107" text-anchor="middle" font-size="9.5" fill="#4b5563">simple? → do it directly</text>
+  <line x1="160" y1="95" x2="211" y2="95" stroke="#4b5563" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <rect x="430" y="72" width="190" height="46" rx="8" fill="#ffffff" stroke="#9ca3af" stroke-width="1.2" stroke-dasharray="5 4"/>
+  <text x="525" y="92" text-anchor="middle" font-size="11" fill="#6b7280">most everyday requests</text>
+  <text x="525" y="107" text-anchor="middle" font-size="11" fill="#6b7280">bypass the pipeline entirely</text>
+  <line x1="335" y1="95" x2="426" y2="95" stroke="#9ca3af" stroke-width="1.2" stroke-dasharray="5 4" marker-end="url(#a)"/>
+
+  <!-- Row 2: battery 1 -->
+  <line x1="275" y1="118" x2="115" y2="166" stroke="#4b5563" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="150" y="136" font-size="9.5" fill="#6b7280" transform="rotate(24 150 136)">build-shaped</text>
+
+  <rect x="30" y="170" width="150" height="46" rx="8" fill="#ffffff" stroke="#9ca3af" stroke-width="1.5"/>
+  <text x="105" y="190" text-anchor="middle" font-size="12" font-weight="600" fill="#111827">ts_feasible</text>
+  <text x="105" y="205" text-anchor="middle" font-size="9.5" fill="#6b7280">executor pre-filter (code)</text>
+
+  <rect x="215" y="170" width="230" height="46" rx="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.8"/>
+  <text x="330" y="190" text-anchor="middle" font-size="12" font-weight="700" fill="#3730a3">BATTERY #1 — one batched call</text>
+  <text x="330" y="205" text-anchor="middle" font-size="9.5" fill="#4b5563">workflow · executor · risk · difficulty (~800 tok, ~1s)</text>
+  <line x1="180" y1="193" x2="211" y2="193" stroke="#4b5563" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <rect x="480" y="170" width="140" height="46" rx="8" fill="#ffffff" stroke="#9ca3af" stroke-width="1.5"/>
+  <text x="550" y="190" text-anchor="middle" font-size="12" font-weight="600" fill="#111827">ts_decide</text>
+  <text x="550" y="205" text-anchor="middle" font-size="9.5" fill="#6b7280">threshold bands (code)</text>
+  <line x1="445" y1="193" x2="476" y2="193" stroke="#4b5563" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <text x="550" y="152" text-anchor="middle" font-size="9.5" fill="#b45309">escalate → ask user / main LLM</text>
+  <line x1="550" y1="156" x2="550" y2="166" stroke="#d97706" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#am)"/>
+
+  <!-- Row 3: dispatch -->
+  <line x1="550" y1="216" x2="300" y2="276" stroke="#4b5563" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <rect x="30" y="280" width="150" height="46" rx="8" fill="#ffffff" stroke="#9ca3af" stroke-width="1.5"/>
+  <text x="105" y="300" text-anchor="middle" font-size="12" font-weight="600" fill="#111827">ts_suggest_skill</text>
+  <text x="105" y="315" text-anchor="middle" font-size="9.5" fill="#6b7280">rank 79 skills · top-3 re-judge</text>
+  <line x1="180" y1="303" x2="226" y2="303" stroke="#4b5563" stroke-width="1.2" stroke-dasharray="5 4" marker-end="url(#a)"/>
+
+  <rect x="230" y="280" width="140" height="46" rx="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.8"/>
+  <text x="300" y="300" text-anchor="middle" font-size="12" font-weight="700" fill="#3730a3">DISPATCH</text>
+  <text x="300" y="315" text-anchor="middle" font-size="9.5" fill="#4b5563">background + spec pushed</text>
+
+  <line x1="370" y1="303" x2="416" y2="303" stroke="#4b5563" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <rect x="420" y="280" width="170" height="46" rx="8" fill="#ffffff" stroke="#9ca3af" stroke-width="1.5"/>
+  <text x="505" y="300" text-anchor="middle" font-size="12" font-weight="600" fill="#111827">SUBAGENT works</text>
+  <text x="505" y="315" text-anchor="middle" font-size="9.5" fill="#6b7280">TS verdicts embedded in prompt</text>
+
+  <line x1="590" y1="303" x2="636" y2="303" stroke="#4b5563" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <rect x="640" y="280" width="140" height="46" rx="8" fill="#ffffff" stroke="#9ca3af" stroke-width="1.5"/>
+  <text x="710" y="300" text-anchor="middle" font-size="12" font-weight="600" fill="#111827">VERIFY</text>
+  <text x="710" y="315" text-anchor="middle" font-size="9.5" fill="#6b7280">Battery #2 · fit/claim Noul</text>
+
+  <!-- Guard loop -->
+  <line x1="505" y1="326" x2="505" y2="366" stroke="#d97706" stroke-width="1.6" marker-end="url(#am)"/>
+  <line x1="545" y1="366" x2="545" y2="326" stroke="#d97706" stroke-width="1.6" marker-end="url(#am)"/>
+
+  <rect x="400" y="370" width="230" height="54" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="2"/>
+  <text x="515" y="390" text-anchor="middle" font-size="12" font-weight="700" fill="#92400e">GUARD — mid-work review</text>
+  <text x="515" y="405" text-anchor="middle" font-size="9.5" fill="#92400e">judge each action: on_spec ≤ 0.35</text>
+  <text x="515" y="417" text-anchor="middle" font-size="9.5" fill="#92400e">→ stop &amp; correct instantly (B-path)</text>
+
+  <line x1="630" y1="397" x2="636" y2="330" stroke="#4b5563" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <rect x="640" y="370" width="140" height="46" rx="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.8"/>
+  <text x="710" y="390" text-anchor="middle" font-size="12" font-weight="700" fill="#3730a3">REPORT</text>
+  <text x="710" y="405" text-anchor="middle" font-size="9.5" fill="#4b5563">to user, with evidence</text>
+  <line x1="710" y1="326" x2="710" y2="366" stroke="#4b5563" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <!-- Ledger bar -->
+  <rect x="30" y="452" width="890" height="34" rx="8" fill="#f3f4f6" stroke="#9ca3af" stroke-width="1"/>
+  <text x="475" y="473" text-anchor="middle" font-size="11" fill="#374151" font-weight="600">LEDGER — every judgment logged: state · questions · answers · thresholds · usage (JSONL, replayable, calibratable)</text>
+
+  <text x="800" y="99" text-anchor="middle" font-size="10" fill="#9ca3af">ZCode · Claude Code · Codex</text>
+  <text x="800" y="113" text-anchor="middle" font-size="10" fill="#9ca3af">github.com/cyrusasco/typesafe-mcp</text>
+</svg>

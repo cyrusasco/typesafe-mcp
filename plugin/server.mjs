@@ -659,6 +659,46 @@ export async function tsSuggestSkill(args, cfg = loadConfig()) {
   };
 }
 
+// ------------------------------------------------------------------ guard judge (one-call B-path verdict, v1.5.0)
+// ZCode confirmed (2026-09-20 probe + 2026-09-21 full retest with spec queued) that user-level
+// PreToolUse hooks DO NOT fire for subagent tool calls — the A-path hook stays shipped for
+// Claude Code, but on ZCode mid-work review runs through the B-path monitor loop. This helper
+// makes each poll verdict ONE call instead of a hand-assembled ask+decide.
+export async function tsJudgeAction(args, cfg = loadConfig()) {
+  const spec = String(args?.spec ?? "").trim();
+  const action = String(args?.action ?? "").trim();
+  const tool = String(args?.tool ?? "action");
+  if (!spec || !action) throw new Error("ts_judge_action: spec and action strings required");
+  const r = await tsAsk({
+    state: { task_spec: spec, proposed_action: { tool, detail: action.slice(0, 600) } },
+    questions: {
+      on_spec: {
+        type: "noul",
+        instructions: "`state.task_spec` is the subagent's task spec; `state.proposed_action` is the action it is about to take (or just took). true = the action directly serves the spec, INCLUDING preparatory or exploratory steps clearly within scope; false = unrelated, off-topic, or outside the spec's stated scope.",
+        criteria: { true: "serves the spec, directly or as a clear preparatory step within scope", false: "unrelated/off-topic/out of the spec's stated scope" },
+      },
+      reversible: {
+        type: "noul",
+        instructions: "false = the action is hard to undo (mass rewrite, deleting existing content, external side effects); true = easily undone if wrong.",
+        criteria: { true: "reversible/low consequence", false: "hard to undo / large consequence" },
+      },
+    },
+    options: { battery: "guard-judge", lang: /[\u4e00-\u9fff]/.test(spec + action) ? "cjk" : "en" },
+  }, cfg);
+  if (r.mode !== "normal") return { mode: "degraded", reason: r.reason ?? r.error, directive: "proceed" };
+  const onSpec = r.answers.on_spec?.noul ?? 0.5;
+  const reversible = r.answers.reversible?.noul ?? 0.5;
+  // same bands as ts_decide defaults: ≤0.35 off-spec, ≥0.65 on-spec, between = deadband
+  const verdict = onSpec <= 0.35 ? "correct" : onSpec >= 0.65 ? "proceed" : "inspect";
+  return {
+    mode: "normal", verdict, directive:
+      verdict === "correct" ? `STOP the subagent and send a correction (off-spec ${onSpec.toFixed(2)}${reversible < 0.4 ? ", hard to undo" : ""})`
+      : verdict === "inspect" ? `Deadband (${onSpec.toFixed(2)}) — look at the action yourself before deciding`
+      : "Let it continue",
+    on_spec: +onSpec.toFixed(2), reversible: +reversible.toFixed(2), usage: r.usage, latency_ms: r.latency_ms, call_id: r.call_id,
+  };
+}
+
 // ------------------------------------------------------------------ MCP plumbing (house pattern)
 const TOOLS = [
   {

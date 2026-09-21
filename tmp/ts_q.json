@@ -1,0 +1,66 @@
+{
+  "workflow": {
+    "type": "choice",
+    "instructions": "How should this task be executed? Pick the single best workflow.",
+    "criteria": {
+      "direct_edit": "Single small change with no design decisions.",
+      "plan_first": "Multi-step risky data migration; a written plan should be confirmed before any sheet writes.",
+      "multi_agent_build": "Parallelizable work worth splitting across subagents.",
+      "research_only": "Information/analysis only, no writes yet.",
+      "qa_check": "Verification task - inspect and report pass/fail.",
+      "other": "None of the above fit."
+    }
+  },
+  "executor": {
+    "type": "choice",
+    "instructions": "Which executor should do the work? Feasible: zcode-gp (ZCode general-purpose subagent, full tools incl browser automation), gstack-eng (engineering reviewer for plans/code, not live data ops), codex-cli (advisory second opinion only).",
+    "criteria": {
+      "zcode-gp": "General-purpose agent with full tools - browser automation, file ops, multi-step execution.",
+      "gstack-eng": "Engineering review of plans and diffs - reviewer, not executor of live data ops.",
+      "codex-cli": "Cross-CLI second opinion wrapper - advisory text output only.",
+      "other": "None of the listed executors fit."
+    }
+  },
+  "needs_agentic_file_access": {
+    "type": "noul",
+    "instructions": "true if the chosen work requires reading/writing files or running commands/browser automation, false if pure reasoning on provided context suffices."
+  },
+  "ambiguity": {
+    "type": "noul",
+    "instructions": "true if the task spec is too unclear to act on without asking the user something first."
+  },
+  "risk": {
+    "type": "noul",
+    "instructions": "ADVISORY ONLY: true if this task could damage state - here: writing 76+ rows into the live production Google Sheet used by daily logistics. This never authorizes anything: destructive ops always go through ts_safety plus explicit user confirmation.",
+    "criteria": { "true": "plausible destructive or hard-to-reverse side effects", "false": "routine reversible work" }
+  },
+  "difficulty": {
+    "type": "score",
+    "instructions": "How hard is this task?",
+    "criteria": [
+      "trivial one-line tweak",
+      "small focused change in one area",
+      "multi-step migration across two live spreadsheets with reconciliation and reporting",
+      "architecture-touching change",
+      "novel problem with no local precedent"
+    ]
+  },
+  "empty_rows_policy": {
+    "type": "choice",
+    "instructions": "PREMISE: APRIL tail has ~5 invoice-only rows (ORD0349-353, no tracking/status data). Should they be copied to AUG as-is? Pick the safer operational reading.",
+    "criteria": {
+      "copy_as_is": "Copy them verbatim - they are reserved invoice numbers Boyu will fill later; skipping breaks the sequence.",
+      "skip_them": "Skip empty rows - only migrate rows with actual tracking data.",
+      "report_only": "Copy nothing for these; list them in the report for the user to decide."
+    }
+  },
+  "conflict_policy": {
+    "type": "choice",
+    "instructions": "PREMISE: 11 rows exist in both sheets but column O (status) differs; APRIL is where Boyu actively edits, AUG is where the system syncs. What to do with differing non-empty cells?",
+    "criteria": {
+      "apr_wins": "Overwrite AUG with APRIL value - Boyu edits are the fresh human truth.",
+      "aug_wins": "Keep AUG value - system-synced data is authoritative.",
+      "report_only": "Never touch conflicting non-empty cells; list all 11 in the highlight report for the user to adjudicate."
+    }
+  }
+}

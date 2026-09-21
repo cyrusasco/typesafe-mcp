@@ -238,21 +238,27 @@ CJK spec misjudges English shell actions — measured). One line + scope.
    3 strikes → stop-and-report. TS degraded/unavailable → allow through
    (fail-open; destructive is still deterministic-blocked).
    Every Jev call lands in the ledger (battery `subagent-guard`).
-3. On harnesss where user-level PreToolUse hooks do NOT fire for subagent
-   sessions (ZCode as of 2026-09-20 — under verification), the hook is inert
-   for subagents there; use the B-path instead.
+3. On harnesses where user-level PreToolUse hooks do NOT fire for subagent
+   sessions, the hook is inert for subagents there; use the B-path instead.
+   **ZCode status: CONFIRMED NOT FIRING — tested twice (2026-09-20 probe;
+   2026-09-21 full retest with a queued spec and an off-scope Write that
+   sailed through unblocked). On ZCode the B-path below is THE mid-work
+   guard. The shipped hook still serves Claude Code installs.**
 
 ### B-path — main-agent monitor loop (works TODAY on ZCode, no hooks needed)
 
 1. Push the spec as above, then dispatch with `run_in_background: true`.
 2. Poll `TaskOutput(block=false)` every ~15–30s; watch the latest
    consequential actions in the output.
-3. For each consequential action, run ONE batched judgment
-   (`cli.mjs ask` with the same `on_spec`/`reversible` questions, state =
-   spec + action).
-4. `on_spec ≤ 0.35` → `TaskStop(task_id)` immediately, then
+3. For each consequential action, get a verdict with ONE command:
+   `node scripts/cli.mjs judge "<task spec>" "<action text>" [--tool Bash|Write|Edit]`
+   → returns `{verdict: proceed|inspect|correct}` + a ready-made directive
+   (proceed = let it continue; inspect = deadband, look yourself; correct =
+   "STOP the subagent and send a correction", includes reversibility).
+4. On `correct`: `TaskStop(task_id)` immediately, then
    `SendMessage(agentId, correction)` — correction = verdict + spec excerpt +
-   what to do instead. The agent resumes with the fix in context.
+   what to do instead (including "delete the file if already created").
+   The agent resumes with the fix in context.
 5. Three corrections → stop for good and escalate to the user.
 
 (中譯:B-path 就係「你做嘢我隔籬睇」— 你個 subagent 背景行,主 agent 每

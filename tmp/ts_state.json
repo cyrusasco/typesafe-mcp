@@ -1,0 +1,15 @@
+{
+  "cwd": "C:/Users/cyrus/ZCodeProject",
+  "task": "Migrate data from legacy Google Sheet APRIL 26 (id 1BdFoO) Sheet1 (353 rows, Boyu carrier tab, still actively edited by Boyu logistics minutes ago) into the live system Sheet Aug 26 (id 1XghkDE9) Sheet1 (277 rows). Recon: 76 rows exist only in APRIL (ORD0278-ORD0353, tail rows are invoice-only with empty tracking/status = likely reserved numbers) and 11 rows where column O differs. User wants: all APRIL updates copied to AUG, a highlight report of what was copied for double-check, then decommission APRIL and onboard everyone to AUG. Execution is browser automation (IAB): read both sheets via gviz CSV fetch, write AUG via Sheets UI / Apps Script. No repo code changes.",
+  "files": [
+    "chenjing-plan/ - local copies of bound Apps Script (5 files, authoritative)",
+    "typesafe-mcp/executors.json - executor registry",
+    "project-status.md - ops status doc"
+  ],
+  "constraints": [
+    "APRIL sheet is READ-ONLY for the agent (hard rule: never write 1BdFoO)",
+    "AUG writes must be conservative: append missing rows + fill empty cells only; NEVER overwrite non-empty AUG cells; conflicts reported for human decision",
+    "Backup AUG Sheet1 before any write; produce per-cell change report after",
+    "User-facing report in Chinese"
+  ]
+}
