@@ -78,9 +78,22 @@ you enter the FLOW.
      answer — measured: small refactor tasks rate review/ponytail ≈ 0.35
      (they are heavyweight workflows); you may still load one manually on
      your own judgment.
-8. **Dispatch:** embed the returned TS JSON (answers + usage + call_id)
-   **verbatim** into the subagent prompt — the subagent gets the raw
-   judgment, not your paraphrase.
+8. **Dispatch (dedup → embed → purpose-built):**
+   - FIRST run `node scripts/subgoal.mjs check '<one-line task spec>'` — if
+     `duplicate:true`, reference the existing `of` agent/task instead of
+     dispatching again (measured: 5 duplicate dispatches wasted tokens).
+     Otherwise `register '<spec>' --ref <agentId|label>` right after spawn,
+     and `done <ref>` when it completes.
+   - Embed the returned TS JSON (answers + usage + call_id) **verbatim** in
+     the subagent prompt — raw judgment, not your paraphrase.
+   - api_exec/cli_exec lanes: the dispatch prompt MUST demand a
+     purpose-built return: "Return ONLY a compact typed result — claims[],
+     files[], verdict — no prose narrative." (Doc §II.A arithmetic:
+     mixed-model routing only pays when the cheap model gets a small
+     context and returns a compact typed chunk, not a transcript to reread.)
+   - `data_class` from Battery #1 feeds `ts_feasible --data-class
+     <open|standard|restricted>`: secrets/.env/infra tasks physically
+     cannot reach non-first-party lanes (registry `data_class` clearance).
 9. **Batteries #2 (verification) and #3 (merge) are PHASE 2/3 — NOT YET
    ACTIVE. Do not improvise them.** After Battery #1 you act; verification
    comes only when those batteries are built and announced.
@@ -136,6 +149,16 @@ executors.json):
       "architecture-touching change (cross-cutting contracts, schemas, pipelines)",
       "novel problem with no local precedent (needs design or research; no existing pattern to copy)"
     ]
+  },
+  "data_class": {
+    "type": "choice",
+    "instructions": "What is the most sensitive DATA this task will touch? Drives trust-aware executor routing (ts_feasible data_class filter).",
+    "criteria": {
+      "open": "public docs / open-source style code only",
+      "standard": "application code in the repo",
+      "restricted": "secrets, .env, infra config, credentials, customer data",
+      "other": "cannot determine"
+    }
   }
 }
 ```
@@ -311,4 +334,28 @@ Windows junction/symlinked gstack skills (cycle-guarded). Index cached 7
 days in DATA_DIR (`skills-index.json`, gitignored); rebuild with
 `node scripts/skill-catalog.mjs build --force`. Cost per full suggest:
 ~2 calls, ~9.4k in / ~0.9k out tokens.
+
+## 12. DOC-DRIVEN PROTOCOLS (v1.6.0, from the Jev Engineering note)
+
+### 12.1 Shared retrieval for read-only fan-out
+Reading + searching is ~2/3 of token spend. Before dispatching ≥2 READ-ONLY
+subagents (verification, review, analysis), do ONE retrieval pass yourself
+(relevant file list + one-line roles + key excerpts) and embed the SAME
+retrieval block in EVERY subagent prompt, with the instruction: "do not
+re-glob/re-grep beyond this block unless a lead dead-ends."
+
+### 12.2 Visibility levels for distilled chunks
+Subagent outputs are distilled into typed chunks (claims = SHORT,
+artifact_summary = LONG, full output = FULL — the Battery #3 state shape).
+Consume at the right level: verification batteries eat SHORT (claims);
+escalation and final reports eat LONG; FULL only when a verdict is
+contested. Never paste FULL outputs into prompts by default. (The full
+visibility-ladder — per-query HIDE/SHORT/LONG/FULL over harness context —
+is harness-native and out of plugin reach; this is our layer's version.)
+
+### 12.3 Per-directory GOTCHAS.md
+When dispatching work scoped to a directory, check for `<dir>/GOTCHAS.md`;
+if present, embed it (or its key lines) in the subagent prompt. Encourage
+the user to keep a footguns file per sensitive directory — condition-bound
+instruction the harness cannot compact away.
 

@@ -508,10 +508,19 @@ export function tsFeasible(args = {}, cfg = loadConfig()) {
     }
   }
   if (!Array.isArray(registry) || !registry.length) throw new Error("ts_feasible: executors must be a non-empty array");
+  // trust routing (v1.6.0, doc §IX): task data_class X may only run on executors whose
+  // data_class clearance >= X. open(0) < standard(1) < restricted(2). No data_class arg → no filter
+  // (backwards compatible). Executor without data_class = open (safest assumption).
+  const CLASS_RANK = { open: 0, standard: 1, restricted: 2 };
+  const taskClass = args.options?.data_class ? CLASS_RANK[args.options.data_class] : undefined;
+  if (args.options?.data_class !== undefined && taskClass === undefined)
+    throw new Error(`ts_feasible: unknown data_class "${args.options.data_class}" (open|standard|restricted)`);
   const feasible = [], infeasible = [];
   for (const e of registry) {
     if (!e || typeof e !== "object" || !e.id) continue; // skip doc/pseudo entries
     const reasons = [];
+    if (taskClass !== undefined && (CLASS_RANK[e.data_class] ?? 0) < taskClass)
+      reasons.push(`data_class: executor clearance ${e.data_class ?? "open(assumed)"} < task ${args.options.data_class}`);
     for (const v of e.requires?.env ?? []) {
       // executor keys may live in the environment or in this server's .env
       if (!process.env[v] && !dotenv()[v]) reasons.push(`missing env: ${v}`);
@@ -524,6 +533,7 @@ export function tsFeasible(args = {}, cfg = loadConfig()) {
   }
   appendLedger(cfg.ledgerDir, {
     ts: new Date().toISOString(), call_id: newCallId(), tool: "ts_feasible", mode: "normal",
+    data_class: args.options?.data_class ?? null,
     feasible, infeasible: infeasible.map((i) => i.id),
   }); // zero-cost tool, but audits need the trace (v1.5.1)
   return { feasible, infeasible };
@@ -803,10 +813,16 @@ const TOOLS = [
   },
   {
     name: "ts_feasible",
-    description: "P0 #2: pre-filter the executor registry (executors.json, or pass an array) by HARD availability — requires.env vars set, requires.command found on PATH — so TypeSafe Choice only ever chooses among feasible executors. Hard code check > TS judgment. Returns {feasible:[ids], infeasible:[{id,reason}]}.",
+    description: "P0 #2: pre-filter the executor registry (executors.json, or pass an array) by HARD availability — requires.env vars set, requires.command found on PATH — so TypeSafe Choice only ever chooses among feasible executors. v1.6.0 trust routing: options.data_class (open|standard|restricted) additionally drops executors whose data_class clearance is below the task's sensitivity (secrets/.env/infra tasks → restricted → first-party lanes only). Hard code check > TS judgment. Returns {feasible:[ids], infeasible:[{id,reason}]}.",
     inputSchema: {
       type: "object",
-      properties: { executors: { type: "array", description: "optional registry array; default reads executors.json" } },
+      properties: {
+        executors: { type: "array", description: "optional registry array; default reads executors.json" },
+        options: {
+          type: "object",
+          properties: { data_class: { type: "string", enum: ["open", "standard", "restricted"], description: "most sensitive data the task will touch; filters executors by clearance" } },
+        },
+      },
     },
     run: (a) => tsFeasible(a),
   },

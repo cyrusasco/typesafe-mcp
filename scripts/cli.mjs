@@ -19,7 +19,7 @@ const args = process.argv.slice(2);
 const [cmd, ...rest] = args;
 const flags = {};
 for (let i = 0; i < rest.length; i++) {
-  const m = /^--(\w+)(?:=(.*))?$/.exec(rest[i]);
+  const m = /^--([\w-]+)(?:=(.*))?$/.exec(rest[i]);
   if (m) { flags[m[1]] = m[2] !== undefined ? m[2] : rest[++i]; }
 }
 const positional = rest.filter((a) => !a.startsWith("--"));
@@ -56,7 +56,7 @@ try {
       break;
     }
     case "feasible":
-      console.log(JSON.stringify(tsFeasible(), null, 2));
+      console.log(JSON.stringify(tsFeasible({ options: flags["data-class"] ? { data_class: flags["data-class"] } : {} }), null, 2));
       break;
     case "suggest": {
       const task = positional.join(" ");

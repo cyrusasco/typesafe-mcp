@@ -1,5 +1,5 @@
 {
-  "note": "Executor registry for the typesafe-dispatch pipeline. ts_feasible hard-checks requires.env (process.env or typesafe-mcp/.env) and requires.command (PATH lookup) so TypeSafe Choice only ever chooses among feasible executors. Keep <8 entries — two-stage dispatch was deliberately cut (eng review).",
+  "note": "Executor registry for the typesafe-dispatch pipeline. ts_feasible hard-checks requires.env (process.env or typesafe-mcp/.env) and requires.command (PATH lookup). data_class = the most sensitive data class this executor may touch (trust routing, doc §IX): open(0) < standard(1) < restricted(2); a task whose data_class is X may only run on executors with clearance >= X. Unknown executor data_class is treated as open (safest). Keep <8 entries.",
   "pseudo_entry_doc": "NOT an executor: every TS Choice question (especially the executor question) must ALWAYS include an 'other' option as the no-match escape.",
   "executors": [
     {
@@ -8,11 +8,19 @@
       "model": "GLM-5.3-Flash (global profile knob)",
       "what": "Full ZCode toolset in a dispatched subagent — file edits, search, bash, multi-step work inside this workspace.",
       "not_for": "Deep reasoning-heavy analysis better served by reasoning models.",
-      "examples": ["multi-file refactor", "run build and fix errors", "repo-wide search and summarize"],
-      "requires": { "env": [], "command": [] },
+      "examples": [
+        "multi-file refactor",
+        "run build and fix errors",
+        "repo-wide search and summarize"
+      ],
+      "requires": {
+        "env": [],
+        "command": []
+      },
       "cost": "bundled (plan quota)",
       "speed": "medium",
-      "agentic": true
+      "agentic": true,
+      "data_class": "restricted"
     },
     {
       "id": "gstack-eng",
@@ -20,11 +28,18 @@
       "model": "GLM-5.3-Flash + gstack eng playbook",
       "what": "Engineering review role (plan + code review) via the gstack-zcode plugin subagent (gstack-eng).",
       "not_for": "General implementation work — reviews and plan critique only.",
-      "examples": ["review a plan spec before build", "staff-eng style PR review"],
-      "requires": { "env": [], "command": [] },
+      "examples": [
+        "review a plan spec before build",
+        "staff-eng style PR review"
+      ],
+      "requires": {
+        "env": [],
+        "command": []
+      },
       "cost": "bundled",
       "speed": "medium",
-      "agentic": true
+      "agentic": true,
+      "data_class": "restricted"
     },
     {
       "id": "codex-cli",
@@ -32,11 +47,20 @@
       "model": "codex CLI (user-configured OpenAI model)",
       "what": "Cross-CLI second opinion on provided context (paste the diff/question into the invocation).",
       "not_for": "Agentic repo work — context-fed only.",
-      "examples": ["second opinion on a diff", "sanity-check an architecture call"],
-      "requires": { "env": [], "command": ["codex"] },
+      "examples": [
+        "second opinion on a diff",
+        "sanity-check an architecture call"
+      ],
+      "requires": {
+        "env": [],
+        "command": [
+          "codex"
+        ]
+      },
       "cost": "user's OpenAI plan",
       "speed": "slow",
-      "agentic": false
+      "agentic": false,
+      "data_class": "standard"
     },
     {
       "id": "deepseek-api",
@@ -44,11 +68,20 @@
       "model": "deepseek-reasoner",
       "what": "Deep reasoning on provided context — algorithm design, hard bug analysis.",
       "not_for": "Anything needing repo file access (context-fed only).",
-      "examples": ["design a parsing algorithm", "root-cause a gnarly race condition from pasted logs"],
-      "requires": { "env": ["DEEPSEEK_API_KEY"], "command": [] },
+      "examples": [
+        "design a parsing algorithm",
+        "root-cause a gnarly race condition from pasted logs"
+      ],
+      "requires": {
+        "env": [
+          "DEEPSEEK_API_KEY"
+        ],
+        "command": []
+      },
       "cost": "pay per token (DeepSeek pricing) — cheap for reasoning depth",
       "speed": "slow (reasoning model)",
-      "agentic": false
+      "agentic": false,
+      "data_class": "standard"
     },
     {
       "id": "qwen-api",
@@ -56,11 +89,20 @@
       "model": "qwen3.8",
       "what": "Fast cheap analysis/drafts, strong Chinese context.",
       "not_for": "Agentic work.",
-      "examples": ["draft bilingual copy", "quick classify/summarize of pasted text"],
-      "requires": { "env": ["QWEN_API_KEY"], "command": [] },
+      "examples": [
+        "draft bilingual copy",
+        "quick classify/summarize of pasted text"
+      ],
+      "requires": {
+        "env": [
+          "QWEN_API_KEY"
+        ],
+        "command": []
+      },
       "cost": "low",
       "speed": "fast",
-      "agentic": false
+      "agentic": false,
+      "data_class": "standard"
     }
   ]
 }
