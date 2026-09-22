@@ -117,11 +117,10 @@
       "api": {
         "style": "anthropic-messages",
         "base_url_env": "QWEN_BASE_URL",
-        "base_url_default": "https://REDACTED-PRIVATE-TUNNEL",
         "key_env": "QWEN_API_KEY",
         "model_name": "qwen3.8-flash-next",
         "context_limit_tokens": 256000,
-        "note": "local deployment behind a public tunnel — data transits the tunnel edge but inference stays on-machine; 256k context cap"
+        "note": "local deployment behind a public tunnel — data transits the tunnel edge but inference stays on-machine; 256k context cap | PRIVATE tunnel URL lives ONLY in .env (QWEN_BASE_URL) — NEVER commit it"
       }
     }
   ]
