@@ -359,3 +359,20 @@ if present, embed it (or its key lines) in the subagent prompt. Encourage
 the user to keep a footguns file per sensitive directory — condition-bound
 instruction the harness cannot compact away.
 
+## 13. API-EXEC LANES + REASONING LEVELS (v1.7.0)
+
+**Invocation:** `node scripts/api-exec.mjs <executorId> <prompt-file|-> [--model variant]`
+— purpose-built wrapper ON by default (returns claims/files/verdict JSON;
+`--raw` skips it); every call ledgered (`battery api-exec-<id>`).
+
+**Reasoning levels (code-side policy; only api_exec lanes have them — F3):**
+
+| Lane | Model variants | Policy |
+|---|---|---|
+| deepseek-api | `deepseek-chat`(fast)/ `deepseek-reasoner`(deep) | Battery #1 difficulty ≥ 3 → reasoner; ≤ 2 → chat; `--model` overrides |
+| qwen-api | `qwen3.8-flash-next` | Fast lane, one level. LOCAL deployment behind a tunnel (Anthropic Messages API) — inference stays on-machine, payload transits the tunnel edge; data_class standard |
+
+**Context cap:** qwen 256k — api-exec refuses prompts estimated above 80%
+of the registry cap before egress. Dispatch prompt = bounded purpose-built
+context (doc §II.A): small context in, compact typed chunk out.
+

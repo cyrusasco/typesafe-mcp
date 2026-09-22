@@ -185,7 +185,7 @@ export function redactDeep(x, rules) {
 }
 
 // ------------------------------------------------------------------ ledger (append-only, one JSON line per call)
-function appendLedger(dir, record) {
+export function appendLedger(dir, record) {
   try {
     fs.mkdirSync(dir, { recursive: true });
     fs.appendFileSync(path.join(dir, `${localDate()}.jsonl`), JSON.stringify(record) + "\n", "utf8");
