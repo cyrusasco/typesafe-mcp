@@ -47,17 +47,38 @@ check("ts_safety 'ls -la' destructive:false", s2.destructive === false);
 const s1b = tsSafety({ text: "git push --force origin main" }, cfg);
 check("ts_safety force-push detected", s1b.destructive === true && s1b.matched.includes("git_push_force"), `matched=${s1b.matched.join(",")}`);
 
-// 4. ts_feasible — scrub executor keys for determinism, restore after
+// 4. ts_feasible — key-aware assertions (v1.7.0: keys may legitimately live in DATA_DIR/.env;
+//    scrubbing process.env alone no longer forces infeasibility). Infeasible is only asserted
+//    when the key is absent from BOTH env and the .env file.
 const savedEnv = {};
 for (const v of ["DEEPSEEK_API_KEY", "QWEN_API_KEY"]) { savedEnv[v] = process.env[v]; delete process.env[v]; }
+const dotEnvHas = (n) => {
+  try {
+    for (const l of fs.readFileSync(path.join(path.dirname(cfg.ledgerDir), ".env"), "utf8").split(/\r?\n/)) {
+      const m = new RegExp("^" + n + "=(.+)$").exec(l.trim());
+      if (m) return true;
+    }
+  } catch { /* no .env */ }
+  return false;
+};
+const deepKey = Boolean(savedEnv.DEEPSEEK_API_KEY) || dotEnvHas("DEEPSEEK_API_KEY");
+const qwenKey = Boolean(savedEnv.QWEN_API_KEY) || dotEnvHas("QWEN_API_KEY");
 let feas;
 try { feas = tsFeasible({}, cfg); } finally {
   for (const v of Object.keys(savedEnv)) if (savedEnv[v] !== undefined) process.env[v] = savedEnv[v];
 }
 check("ts_feasible zcode-gp feasible", feas.feasible.includes("zcode-gp"), `feasible=${feas.feasible.join(",")}`);
 const infMap = Object.fromEntries(feas.infeasible.map((x) => [x.id, x.reason]));
-check("ts_feasible deepseek-api infeasible (no key)", "deepseek-api" in infMap && /DEEPSEEK_API_KEY/.test(infMap["deepseek-api"]));
-check("ts_feasible qwen-api infeasible (no key)", "qwen-api" in infMap && /QWEN_API_KEY/.test(infMap["qwen-api"]), `reason=${infMap["qwen-api"] ?? ""}`);
+check(
+  "ts_feasible deepseek-api key-aware",
+  deepKey ? feas.feasible.includes("deepseek-api") : ("deepseek-api" in infMap && /DEEPSEEK_API_KEY/.test(infMap["deepseek-api"])),
+  `key=${deepKey} feasible=${feas.feasible.join(",")}`,
+);
+check(
+  "ts_feasible qwen-api key-aware",
+  qwenKey ? feas.feasible.includes("qwen-api") : ("qwen-api" in infMap && /QWEN_API_KEY/.test(infMap["qwen-api"])),
+  `key=${qwenKey} reason=${infMap["qwen-api"] ?? ""}`,
+);
 
 // 5. ts_decide — deterministic thresholds
 const dec = tsDecide({
