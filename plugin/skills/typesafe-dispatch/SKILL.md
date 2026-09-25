@@ -78,12 +78,20 @@ you enter the FLOW.
      answer — measured: small refactor tasks rate review/ponytail ≈ 0.35
      (they are heavyweight workflows); you may still load one manually on
      your own judgment.
-8. **Dispatch (dedup → embed → purpose-built):**
+8. **Dispatch (dedup → auto-guard → embed → purpose-built):**
    - FIRST run `node scripts/subgoal.mjs check '<one-line task spec>'` — if
      `duplicate:true`, reference the existing `of` agent/task instead of
      dispatching again (measured: 5 duplicate dispatches wasted tokens).
      Otherwise `register '<spec>' --ref <agentId|label>` right after spawn,
      and `done <ref>` when it completes.
+   - **AUTO-GUARD (v1.8.0, default-ON):** every build dispatch (workflow
+     multi_agent_build / plan_first) MUST push the guard spec
+     (`guard-spec.mjs push '<ENGLISH spec>'`), dispatch with
+     `run_in_background: true`, and run `cli.mjs judge` on consequential
+     actions every 15–30s. Skipping the guard requires stating WHY to the
+     user (three audits: opt-in guard was skipped 3/3 times; the skipped
+     session thrashed 73 edit failures overnight). On verdict `correct`
+     → TaskStop + SendMessage correction immediately.
    - Embed the returned TS JSON (answers + usage + call_id) **verbatim** in
      the subagent prompt — raw judgment, not your paraphrase.
    - api_exec/cli_exec lanes: the dispatch prompt MUST demand a
@@ -94,9 +102,16 @@ you enter the FLOW.
    - `data_class` from Battery #1 feeds `ts_feasible --data-class
      <open|standard|restricted>`: secrets/.env/infra tasks physically
      cannot reach non-first-party lanes (registry `data_class` clearance).
-9. **Batteries #2 (verification) and #3 (merge) are PHASE 2/3 — NOT YET
-   ACTIVE. Do not improvise them.** After Battery #1 you act; verification
-   comes only when those batteries are built and announced.
+9. **POST-WORK REVIEW (v1.8.0 — Battery #2 lite, ACTIVE):** when the
+   subagent finishes build work, run
+   `node scripts/review-comment.mjs --spec '<spec>' --diff-file <diff> --test-result 'pass|fail: <out>' [--reviewer deepseek-api|codex-cli] [--model deepseek-reasoner]`
+   BEFORE reporting to the user. Ladder: failing tests → instant correct
+   (no model call); reviewer broken + Jev-validated → SendMessage the
+   correction (≤2 fix-loops, re-review after each); reviewer pass → accept
+   with risks surfaced. The "fast but broken" failure mode dies here —
+   never report unreviewed build work.
+10. **Battery #3 (merge) is still PHASE 3 — not yet active. Do not
+   improvise it.**
 
 ## 3. BATTERY #1 TEMPLATE
 
@@ -243,8 +258,10 @@ TS Choice must include an `other` option (no-match escape).
 
 While a subagent WORKS, a guard checks its consequential actions
 (Bash|Edit|Write) and corrects it IMMEDIATELY when an action is off-spec —
-not after completion. Guard only high-stakes dispatches (user asked, or risk
-judgment says so); everyday subagent runs stay unguarded.
+not after completion. **v1.8.0: default-ON for every build dispatch
+(multi_agent_build / plan_first).** Skipping requires stating WHY to the
+user — three audits found opt-in guard was skipped every single time, and
+the one session that skipped it thrashed 73 edit failures overnight.
 
 **Spec discipline: write the spec in ENGLISH** (Jev is English-primary; a
 CJK spec misjudges English shell actions — measured). One line + scope.

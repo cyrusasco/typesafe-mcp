@@ -37,7 +37,7 @@ process.stdout.write(
     hookSpecificOutput: {
       hookEventName: "UserPromptSubmit",
       additionalContext:
-        "【typesafe-dispatch】呢個 request 如果係 multi-step/ambiguous/build-shaped:先照 skill `typesafe-dispatch`（typesafe-dispatch plugin 內置嗰份 SKILL.md）行 — ts_feasible 預過濾 → 一次 batched ts_ask（Battery #1）→ ts_decide 分 band → 先至郁手派工;subagent dispatch 前行 ts_suggest_skill 搵skill。呢個 session 冇 ts_* MCP tool 嘅話,用 Bash: node <plugin-install-dir>/../scripts/cli.mjs（ask/decide/safety/feasible/suggest/judge/ping）。高風險/大改 subagent 一定要開 GUARD（Jev 做緊嗰陣即時監察）:dispatch 前先 `node scripts/guard-spec.mjs push '<一行英文 spec>'` + run_in_background,行緊期間每 15–30s 用 `cli.mjs judge \"<spec>\" \"<action>\"` 判佢最新動作,on_spec ≤0.35 就 TaskStop + SendMessage 糾正。簡單/單一改動嘅 request 直接做,唔好行 pipeline（GATE 哲學）。破壞性操作:ts_safety + 用戶確認,冇例外。",
+        "【typesafe-dispatch】呢個 request 如果係 multi-step/ambiguous/build-shaped:先照 skill `typesafe-dispatch`（typesafe-dispatch plugin 內置嗰份 SKILL.md）行 — ts_feasible 預過濾 → 一次 batched ts_ask（Battery #1）→ ts_decide 分 band → subgoal.mjs check 去重 → 先至派工;subagent dispatch 前行 ts_suggest_skill 搵skill。**Build 派工必開 GUARD（v1.8.0 default-ON,唔開要講明原因）**:guard-spec push + run_in_background + 每 15–30s cli.mjs judge,on_spec ≤0.35 即 TaskStop+糾正。**完工後必行 review-comment**:node scripts/review-comment.mjs --spec '<spec>' --diff-file <diff> --test-result <結果> — 測試 fail 即打回頭;reasoner 話 broken + Jev 確認 → 帶 comment 叫 subagent 改（≤2 loop）;pass 先至報用戶。唔好報未驗收嘅嘢——快但唔 work 等於冇用。呢個 session 冇 ts_* MCP tool 嘅話,用 Bash: node <plugin-install-dir>/../scripts/cli.mjs。簡單/單一改動嘅 request 直接做,唔好行 pipeline（GATE 哲學）。破壞性操作:ts_safety + 用戶確認,冇例外。",
     },
   }),
 );
