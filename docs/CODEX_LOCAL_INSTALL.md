@@ -43,6 +43,8 @@ A persistent Node-REPL harness timeout between these probes is retained as a tra
 
 Final local offline suite: **106 tests, 106 passed, 0 failed, 0 skipped** on Windows/Node 24.18.0. TDD records include corpus scope 7 failing regressions, native path identity 1 failure, generator replacement-token paths 2 failures, nomination/adequacy correction 9 failures, and dropped host model-description evidence 1 failure before their corresponding fixes. Offline mocked responses are not live routing acceptance.
 
+The first published Windows CI run exposed a fixture portability error: hosted `TEMP` used the short path `RUNNER~1`, correctly rejected by the production adapter's canonical-path guard. The positive fixture now resolves its temporary parent to the real canonical path before creating its owned root; production alias/reparse rejection is unchanged. The original failed hosted run is retained; subsequent exact-head CI is reported separately, never inferred from local results.
+
 ## Host-pickup boundary
 
 At the observed checkpoint, this existing task's tool catalog did **not** expose `ts_codex_*` or `original_skills`. The direct stdio acceptance probes above are not represented as native task-tool exposure. Plugin installation, a successful provider request and static hooks are not proof that all existing tasks are already governed.

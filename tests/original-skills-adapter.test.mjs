@@ -12,9 +12,12 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const hash = x => crypto.createHash('sha256').update(x).digest('hex');
 const quote = x => `'${x.replace(/'/g, "''")}'`;
 function fixture(t, change = {}) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'typesafe-adapter-'));
+  // Hosted Windows TEMP can use RUNNER~1. Positive fixtures must use the
+  // canonical directory; the production alias/reparse rejection stays intact.
+  const temp = fs.realpathSync.native(os.tmpdir());
+  const root = fs.mkdtempSync(path.join(temp, 'typesafe-adapter-'));
   t.after(() => {
-    assert.equal(path.dirname(path.resolve(root)), path.resolve(os.tmpdir()));
+    assert.equal(path.dirname(path.resolve(root)), path.resolve(temp));
     assert.match(path.basename(root), /^typesafe-adapter-[a-zA-Z0-9]+$/);
     assert.equal(fs.lstatSync(root).isSymbolicLink(), false);
     fs.rmSync(root, {recursive:true, force:true});
