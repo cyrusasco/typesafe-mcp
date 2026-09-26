@@ -19,6 +19,13 @@ const digest = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 const psQuote = value => `'${value.replace(/'/g, "''")}'`;
 const identity = value => process.platform === 'win32' ? value.toLowerCase() : value;
 
+export function windowsInspectionEnvironment(source = process.env) {
+  // Windows PowerShell needs ordinary OS/profile/temp paths on hosted runners.
+  // Do not inherit arbitrary credentials, PATH, module paths or execution hooks.
+  const names = ['SystemRoot','WINDIR','SystemDrive','COMSPEC','COMPUTERNAME','USERPROFILE','HOMEDRIVE','HOMEPATH','LOCALAPPDATA','APPDATA','TEMP','TMP'];
+  return Object.fromEntries(names.filter(k => typeof source[k] === 'string').map(k => [k,source[k]]));
+}
+
 function absoluteLocal(value, label) {
   if (typeof value !== 'string' || !value || value !== value.trim() || /[\x00-\x1f\x7f]/.test(value)) throw new Error(`${label}: invalid path text`);
   if (/^(?:\\\\|\/\/)/.test(value)) throw new Error(`${label}: network/UNC/device paths are not permitted`);
@@ -55,10 +62,10 @@ function assertOrdinaryPaths(paths) {
     const shell = path.join(systemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe');
     const command = "$ErrorActionPreference='Stop'; foreach ($p in ($env:TYPESAFE_ADAPTER_PATHS | ConvertFrom-Json)) { $a=[IO.File]::GetAttributes([string]$p); if (($a -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Reparse path rejected' } }; [Console]::Out.Write('OK')";
     const result = spawnSync(shell,['-NoLogo','-NoProfile','-NonInteractive','-Command',command],{
-      encoding:'utf8',timeout:15000,maxBuffer:65536,
-      env:{SystemRoot:systemRoot,WINDIR:systemRoot,TYPESAFE_ADAPTER_PATHS:JSON.stringify(components)},
+      encoding:'utf8',timeout:15000,maxBuffer:65536,windowsHide:true,
+      env:{...windowsInspectionEnvironment(),SystemRoot:systemRoot,WINDIR:systemRoot,TYPESAFE_ADAPTER_PATHS:JSON.stringify(components)},
     });
-    if (result.status !== 0 || result.stdout !== 'OK') throw new Error('Windows reparse inspection failed closed');
+    if (result.status !== 0 || result.stdout !== 'OK') throw new Error(`Windows reparse inspection failed closed (exit=${result.status}, error=${result.error?.code ?? 'none'}, signal=${result.signal ?? 'none'})`);
   }
 }
 
