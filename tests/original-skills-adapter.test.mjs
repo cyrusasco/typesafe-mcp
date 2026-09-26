@@ -6,7 +6,13 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { prepareOriginalSkillsAdapter, ORIGINAL_AUDIT_LINE, windowsInspectionEnvironment } from '../scripts/prepare-original-skills-adapter.mjs';
+import { prepareOriginalSkillsAdapter, ORIGINAL_AUDIT_LINE, windowsInspectionEnvironment, windowsInspectionShell } from '../scripts/prepare-original-skills-adapter.mjs';
+
+test('inspection uses already-installed PowerShell 7 when present, with built-in fallback and no install', () => {
+  const env={SystemRoot:'C:\\Windows',ProgramFiles:'C:\\Program Files'};
+  assert.equal(windowsInspectionShell(env,()=>true),path.join(env.ProgramFiles,'PowerShell','7','pwsh.exe'));
+  assert.equal(windowsInspectionShell(env,()=>false),path.join(env.SystemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe'));
+});
 
 test('Windows inspection preserves bounded OS startup paths but no tokens or custom execution hooks', () => {
   const env = windowsInspectionEnvironment({SystemRoot:'C:\\Windows',TEMP:'C:\\Temp',TMP:'C:\\Temp',USERPROFILE:'C:\\Users\\fixture',LOCALAPPDATA:'C:\\Users\\fixture\\AppData\\Local',APPDATA:'C:\\Users\\fixture\\AppData\\Roaming',TYPESAFE_API_KEY:'must-not-inherit',NODE_OPTIONS:'must-not-inherit',PATH:'must-not-inherit'});
@@ -62,7 +68,7 @@ test('adapter preserves originals and all seven pins, changing only audit alloca
 test('generated audit expression allocates distinct launch directories under the unchanged runtime root', t => {
   const f=fixture(t); const r=prepareOriginalSkillsAdapter(f.options);
   if(process.platform !== 'win32') { assert.match(r.transformation.new_audit_line,/Join-Path \$runtimePath/); return; }
-  const powershell=path.join(process.env.SystemRoot,'System32/WindowsPowerShell/v1.0/powershell.exe');
+  const powershell=windowsInspectionShell();
   const execute=()=> {
     const command=`$ErrorActionPreference='Stop'; $runtimePath=${quote(f.root)}; $runId='frozen-snapshot'; ${r.transformation.new_audit_line.trim()}; [Console]::Out.Write((@{audit=$auditPath;snapshot=$runId}|ConvertTo-Json -Compress))`;
     const x=spawnSync(powershell,['-NoLogo','-NoProfile','-NonInteractive','-Command',command],{encoding:'utf8',timeout:15000,windowsHide:true,env:{...windowsInspectionEnvironment(),HOME:f.root,USERPROFILE:f.root,LOCALAPPDATA:f.root,APPDATA:f.root,TEMP:f.root,TMP:f.root}});

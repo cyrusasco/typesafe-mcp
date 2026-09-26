@@ -26,6 +26,12 @@ export function windowsInspectionEnvironment(source = process.env) {
   return Object.fromEntries(names.filter(k => typeof source[k] === 'string').map(k => [k,source[k]]));
 }
 
+export function windowsInspectionShell(source = process.env, exists = fs.existsSync) {
+  const modern = source.ProgramFiles && path.join(source.ProgramFiles,'PowerShell','7','pwsh.exe');
+  if (modern && exists(modern)) return modern;
+  return path.join(source.SystemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe');
+}
+
 function absoluteLocal(value, label) {
   if (typeof value !== 'string' || !value || value !== value.trim() || /[\x00-\x1f\x7f]/.test(value)) throw new Error(`${label}: invalid path text`);
   if (/^(?:\\\\|\/\/)/.test(value)) throw new Error(`${label}: network/UNC/device paths are not permitted`);
@@ -59,10 +65,10 @@ function assertOrdinaryPaths(paths) {
     // never interpolated into PowerShell code. This starts no serving runtime.
     const systemRoot = process.env.SystemRoot;
     if (!systemRoot || !path.isAbsolute(systemRoot)) throw new Error('Windows reparse inspection requires SystemRoot');
-    const shell = path.join(systemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe');
+    const shell = windowsInspectionShell();
     const command = "$ErrorActionPreference='Stop'; foreach ($p in ($env:TYPESAFE_ADAPTER_PATHS | ConvertFrom-Json)) { $a=[IO.File]::GetAttributes([string]$p); if (($a -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Reparse path rejected' } }; [Console]::Out.Write('OK')";
     const result = spawnSync(shell,['-NoLogo','-NoProfile','-NonInteractive','-Command',command],{
-      encoding:'utf8',timeout:15000,maxBuffer:65536,windowsHide:true,
+      encoding:'utf8',timeout:15000,maxBuffer:65536,windowsHide:true,stdio:['ignore','pipe','pipe'],
       env:{...windowsInspectionEnvironment(),SystemRoot:systemRoot,WINDIR:systemRoot,TYPESAFE_ADAPTER_PATHS:JSON.stringify(components)},
     });
     if (result.status !== 0 || result.stdout !== 'OK') throw new Error(`Windows reparse inspection failed closed (exit=${result.status}, error=${result.error?.code ?? 'none'}, signal=${result.signal ?? 'none'})`);
