@@ -10,6 +10,8 @@ The Codex workflow is **not a context compactor**. Every governed command is sub
 
 See [Codex protocol and exact boundaries](plugin/codex/PROTOCOL.md), [Codex Skill](plugin/skills/typesafe-codex/SKILL.md), and [v1.9 changes](docs/V1_9_CHANGELOG.md). Legacy ZCode/Claude workflows remain separate; their historical narrative below is not a Codex acceptance claim. Node 22+ is the tested baseline; no runtime dependencies.
 
+The [local integration receipt](docs/CODEX_LOCAL_INSTALL.md) records main-home installation, real Jev/Guardian probes, the first rejected routing result, and the remaining host-reload/native-execution gate. Installed does not mean every existing task has loaded the tools.
+
 ## Install — ZCode
 
 1. In ZCode: **Discover** → **`+`** → add this GitHub repo:

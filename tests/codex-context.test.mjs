@@ -58,6 +58,111 @@ for (const field of ['project_id', 'revision']) {
   });
 }
 
+function corpusSnapshot() {
+  return {
+    scope: 'skill_corpus', corpus_id: 'fixture-original-skills', revision: 'corpus-revision-7',
+    provenance_sha256: 'a'.repeat(64), observed_at: NOW,
+    source: { name: 'fixture-original-skills-mcp', operation: 'query', request_id: 'corpus-query-1' },
+    results: [{ symbol: 'FixtureSkill', file: 'skills/fixture-skill/SKILL.md' }],
+  };
+}
+
+test('default and explicit project scope retain strict project identity in the output', async t => {
+  const { input } = await fixture(t);
+  for (const scope of [undefined, 'project']) {
+    if (scope === undefined) delete input.gitnexus.scope;
+    else input.gitnexus.scope = scope;
+    const output = await collectContext(input);
+    assert.equal(output.graph.scope, 'project');
+    assert.equal(output.graph.project_id, input.project_id);
+    assert.equal(output.graph.revision, input.revision);
+    assert.equal(Object.hasOwn(output.graph, 'corpus_id'), false);
+    assert.equal(Object.hasOwn(output.graph, 'provenance_sha256'), false);
+  }
+});
+
+test('Skill corpus keeps its independent identity and revision, not the target project identity', async t => {
+  const { input } = await fixture(t);
+  input.gitnexus = corpusSnapshot();
+  const output = await collectContext(input);
+  assert.equal(output.project_id, 'fixture-project');
+  assert.equal(output.revision, 'commit-1');
+  assert.equal(output.graph.scope, 'skill_corpus');
+  assert.equal(output.graph.corpus_id, 'fixture-original-skills');
+  assert.equal(output.graph.revision, 'corpus-revision-7');
+  assert.equal(output.graph.provenance_sha256, 'a'.repeat(64));
+  assert.equal(Object.hasOwn(output.graph, 'project_id'), false);
+  assert.deepEqual(output.graph.source, input.gitnexus.source);
+  assert.deepEqual(output.graph.results, input.gitnexus.results);
+  assert.equal(output.provenance.snapshot_authenticity, 'host-provided-unverified');
+  assert.equal(output.provenance.graph_trust, 'data-only');
+  assert.equal(output.provenance.graph_authority, 'no-permission-grant');
+});
+
+test('rejects unknown or malformed graph scopes even when project identity otherwise matches', async t => {
+  const { input } = await fixture(t);
+  for (const scope of ['', 'corpus', 'skill_corpus ', null, false, 1, {}]) {
+    input.gitnexus.scope = scope;
+    await assert.rejects(collectContext(input), { code: 'INVALID_GRAPH_SCOPE' });
+  }
+});
+
+test('rejects corpus metadata masquerading as a default or explicit project graph', async t => {
+  const { input } = await fixture(t);
+  for (const scope of [undefined, 'project']) {
+    if (scope === undefined) delete input.gitnexus.scope;
+    else input.gitnexus.scope = scope;
+    for (const [key, value] of [['corpus_id', 'fixture-original-skills'], ['provenance_sha256', 'a'.repeat(64)]]) {
+      input.gitnexus[key] = value;
+      await assert.rejects(collectContext(input), { code: 'GRAPH_SCOPE_MISMATCH' });
+      delete input.gitnexus[key];
+    }
+  }
+});
+
+test('rejects corpus snapshots carrying a target project_id, including a null identity', async t => {
+  const { input } = await fixture(t);
+  input.gitnexus = corpusSnapshot();
+  for (const project_id of ['fixture-project', 'other-project', null]) {
+    input.gitnexus.project_id = project_id;
+    await assert.rejects(collectContext(input), { code: 'GRAPH_SCOPE_MISMATCH' });
+  }
+});
+
+test('requires a named corpus, its own revision, and an exact 64-hex provenance digest', async t => {
+  const { input } = await fixture(t);
+  for (const [key, value, code] of [
+    ['corpus_id', null, 'INVALID_FIELD'], ['corpus_id', ' ', 'INVALID_FIELD'],
+    ['revision', null, 'INVALID_FIELD'], ['revision', '', 'INVALID_FIELD'],
+    ['provenance_sha256', null, 'INVALID_CORPUS_PROVENANCE'],
+    ['provenance_sha256', 'a'.repeat(63), 'INVALID_CORPUS_PROVENANCE'],
+    ['provenance_sha256', 'a'.repeat(65), 'INVALID_CORPUS_PROVENANCE'],
+    ['provenance_sha256', 'g'.repeat(64), 'INVALID_CORPUS_PROVENANCE'],
+  ]) {
+    input.gitnexus = { ...corpusSnapshot(), [key]: value };
+    await assert.rejects(collectContext(input), { code });
+  }
+  for (const key of ['corpus_id', 'revision', 'provenance_sha256']) {
+    input.gitnexus = corpusSnapshot();
+    delete input.gitnexus[key];
+    await assert.rejects(collectContext(input), { code: key === 'provenance_sha256' ? 'INVALID_CORPUS_PROVENANCE' : 'INVALID_FIELD' });
+  }
+});
+
+test('corpus evidence obeys the same freshness, source, bounds and redaction checks', async t => {
+  const { input } = await fixture(t);
+  input.gitnexus = { ...corpusSnapshot(), observed_at: '2026-09-26T07:54:59.999Z' };
+  await assert.rejects(collectContext(input), { code: 'STALE_CONTEXT' });
+  input.gitnexus = { ...corpusSnapshot(), source: {} };
+  await assert.rejects(collectContext(input), { code: 'INVALID_SOURCE' });
+  input.gitnexus = { ...corpusSnapshot(), results: Array.from({ length: 20 }, () => ({ text: 'x'.repeat(3000) })) };
+  await assert.rejects(collectContext(input), { code: 'CONTEXT_TOO_LARGE' });
+  input.gitnexus = { ...corpusSnapshot(), provenance_sha256: 'A'.repeat(64), results: [{ token: 'fixture-secret' }] };
+  const output = await collectContext(input);
+  assert.equal(output.graph.provenance_sha256, 'A'.repeat(64));
+  assert.deepEqual(output.graph.results, [{ token: '[REDACTED]' }]);
+});
+
 for (const key of ['liveSkills', 'gitnexus']) {
   test(`rejects stale ${key} instead of substituting cached inventory`, async t => {
     const { input } = await fixture(t);

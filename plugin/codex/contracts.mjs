@@ -7,6 +7,13 @@ export function text(value, label, max = 4000) {
   return value;
 }
 export function id(value, label = 'id') { text(value, label, 160); requireThat(/^[a-zA-Z0-9_.:-]+$/.test(value) && !['__proto__','constructor','prototype'].includes(value), `${label}: invalid identity`); return value; }
+// Native host task paths are opaque routing identities, never filesystem keys.
+export function nativeId(value) {
+  text(value, 'native identity', 512);
+  const parts = value.startsWith('/') ? value.slice(1).split('/') : [value];
+  requireThat(parts.every(p => /^[a-zA-Z0-9_.:-]+$/.test(p) && !['.','..','__proto__','constructor','prototype'].includes(p)), 'native identity: invalid identity');
+  return value;
+}
 export function bounded(value, label, max = 48000) { requireThat(Buffer.byteLength(JSON.stringify(value)) <= max, `${label}: size budget exceeded; provide a smaller complete scope`); }
 export function fresh(value, now, label) {
   const at = Date.parse(value); requireThat(Number.isFinite(at) && at <= now + 30000 && now - at <= 300000, `${label}: stale or invalid observation`);
@@ -45,7 +52,8 @@ export function routesFrom(cap, now) {
     for (const effort of m.efforts) for (const role of cap.roles) {
       id(effort); id(role);
       const key = `${m.id}/${effort}/${role}`; requireThat(!seen.has(key), 'duplicate route'); seen.add(key);
-      routes.push({ id: `route_${routes.length}`, model_id: m.id, tier: m.tier, reasoning_effort: effort, role });
+      routes.push({ id: `route_${routes.length}`, model_id: m.id, tier: m.tier, reasoning_effort: effort, role,
+        ...(m.description === undefined ? {} : { model_description: text(m.description, 'host model description', 512) }) });
     }
   }
   requireThat(routes.length <= 192, 'reduce relevant live model/effort/role candidates to <=192 combinations');

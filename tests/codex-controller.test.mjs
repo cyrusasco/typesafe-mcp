@@ -6,9 +6,35 @@ import path from 'node:path';
 import { Controller } from '../plugin/codex/controller.mjs';
 import { digest } from '../plugin/codex/contracts.mjs';
 
+test('fresh host model descriptions reach adequacy without fabricating capability from the model name', async t => {
+  const f = fixture(t); f.capabilities.models[0].description = 'Host description: fast and affordable model for easier tasks.';
+  const r = await ready(f);
+  assert.equal(r.subtasks.fix.assignment.model_description, f.capabilities.models[0].description);
+  assert.equal(f.calls[1].state.selected_route.model_description, f.capabilities.models[0].description);
+});
+
+test('native canonical task paths survive binding and progress without becoming storage keys', async t => {
+  const f = fixture(t); let r = await ready(f);
+  const native = '/root/jev_live_check';
+  await f.c.claim({ key:f.key, action_id:r.pending[0].id });
+  r = await f.c.ack({ key:f.key, action_id:r.pending[0].id, receipt:{ok:true,native_agent_id:native,evidence_ref:'native-spawn-receipt'} });
+  await f.c.claim({ key:f.key, action_id:r.pending[0].id });
+  await f.c.ack({ key:f.key, action_id:r.pending[0].id, receipt:{ok:true,native_agent_id:native,evidence_ref:'native-followup-receipt'} });
+  r = await f.c.event({ key:f.key, event:{id:'native-progress',native_agent_id:native,subtask_id:'fix',phase:'progress',kind:'test',summary:'Actual child test progress',evidence_refs:['native-message']} });
+  assert.equal(r.subtasks.fix.native_agent_id,native);
+  for (const invalid of ['/root/../child','/root//child','/root/child/','../child','/root/constructor']) {
+    await assert.rejects(f.c.event({key:f.key,event:{id:'invalid',native_agent_id:invalid,subtask_id:'fix',phase:'progress',kind:'test',summary:'Invalid identity',evidence_refs:['invalid']}}), /native identity/);
+  }
+});
+
 function fixture(t, answers = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'jev-controller-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  t.after(() => {
+    const resolved = path.resolve(root);
+    assert.equal(path.dirname(resolved), path.resolve(os.tmpdir()));
+    assert.match(path.basename(resolved), /^jev-controller-/);
+    fs.rmSync(resolved, { recursive: true, force: true });
+  });
   const key = { project_id: 'repo', task_id: 'task', turn_id: 'turn' };
   const now = Date.now();
   const context = { project_id: 'repo', revision: 'rev', observed_at: new Date(now).toISOString(),
@@ -18,13 +44,13 @@ function fixture(t, answers = {}) {
     constraints: ['No production writes'], subtasks: [{ id: 'fix', goal: 'Fix failing unit tests',
       write_scope: ['src/'], acceptance: ['Regression passes'], depends_on: [] }] };
   const capabilities = { observed_at: new Date(now).toISOString(), source: 'fixture native schema',
-    models: [{ id: 'model-luna', tier: 'LUNA', efforts: ['high'] }], roles: ['worker'] };
+    models: [{ id: 'model-luna', tier: 'LUNA', efforts: ['high'] }], roles: ['worker'], role_scope_admitted: true };
   const calls = [];
   const ask = async (request) => { calls.push(request); return { mode: 'normal', call_id: `call-${calls.length}`,
     answers: Object.fromEntries(Object.keys(request.questions).map(k => [k, answers[k] ??
       (k === 'hardness' ? { choice: 'moderate', confidence: 0.9 } :
        k === 'assignment' ? { choice: 'route_0', confidence: 0.9 } :
-       k === 'skill_testing' ? { noul: 0.9 } : { choice: 'continue', confidence: 0.9 })])) }; };
+       ['skill_testing', 'route_adequate', 'role_scope_compatible'].includes(k) ? { noul: 0.9 } : { choice: 'continue', confidence: 0.9 })])) }; };
   const c = new Controller({ root, ask, now: () => now, collect: async () => context });
   return { c, key, plan, capabilities, context, calls, root };
 }
@@ -43,12 +69,138 @@ async function running(f) {
 }
 test('plan asks Jev for hardness, native route and Skill; spawn stays inert until explicit binding', async t => {
   const f = fixture(t); const r = await ready(f);
-  assert.equal(f.calls.length, 1); assert.equal(r.pending[0].kind, 'spawn');
+  assert.equal(f.calls.length, 2); assert.equal(r.pending[0].kind, 'spawn');
   assert.match(r.pending[0].message, /WAIT/);
   assert.equal(r.subtasks.fix.assignment.model_id, 'model-luna');
   assert.equal(r.subtasks.fix.assignment.tier, 'LUNA');
   assert.equal(r.subtasks.fix.skills[0].id, 'testing');
   assert.equal(r.subtasks.fix.status, 'awaiting_spawn');
+});
+
+test('low nomination concentration is advisory; two independent adequacy gates authorize only the canonical route', async t => {
+  const f = fixture(t, { hardness: { choice: 'routine', confidence: 0.32 }, assignment: { choice: 'route_0', confidence: 0.21 } });
+  const r = await ready(f);
+  assert.equal(f.calls.length, 2);
+  assert.equal(f.calls[0].options.battery, 'codex-route-nomination');
+  assert.equal(f.calls[1].options.battery, 'codex-route-adequacy');
+  assert.deepEqual(Object.keys(f.calls[1].questions).sort(), ['role_scope_compatible', 'route_adequate']);
+  assert.equal(f.calls[1].questions.route_adequate.type, 'noul');
+  assert.equal(f.calls[1].questions.role_scope_compatible.type, 'noul');
+  assert.deepEqual(f.calls[1].state.selected_route, r.subtasks.fix.assignment);
+  const audit = r.subtasks.fix.routing_audit;
+  assert.equal(audit.policy_version, 'codex-route-nomination-adequacy-v1');
+  assert.equal(audit.nomination.assignment.confidence, 0.21);
+  assert.equal(audit.nomination.hardness.confidence, 0.32);
+  assert.equal(audit.nomination.authority, 'advisory-only');
+  assert.deepEqual(audit.selected_route, r.subtasks.fix.assignment);
+  assert.equal(audit.skill_validation[0].noul, 0.9);
+  assert.equal(audit.skill_validation[0].selected, true);
+  assert.deepEqual(audit.calls.map(c => c.call_id), ['call-1', 'call-2']);
+  assert.equal(audit.adequacy.route_adequate, 0.9);
+  assert.equal(audit.adequacy.role_scope_compatible, 0.9);
+  assert.equal(audit.status, 'admitted');
+  assert.equal(r.pending[0].kind, 'spawn');
+  const definitions = f.calls[0].questions.hardness.criteria;
+  assert.ok(['trivial', 'routine', 'moderate', 'hard', 'critical'].every(label => definitions[label].length > 60));
+  assert.match(f.calls[0].questions.hardness.instructions, /highest.*appl/i);
+});
+
+test('low-confidence nomination alone never dispatches; unavailable adequacy is durable and not automatically retried', async t => {
+  const f = fixture(t, { assignment: { choice: 'route_0', confidence: 0.21 } });
+  const ask = f.c.ask;
+  f.c.ask = async request => {
+    if (request.options.battery === 'codex-route-adequacy') {
+      f.calls.push(request);
+      return { mode: 'degraded', call_id: 'adequacy-unavailable', reason: 'provider_unavailable' };
+    }
+    return ask(request);
+  };
+  await assert.rejects(ready(f), /provider_unavailable/);
+  assert.equal(f.calls.length, 2);
+  const report = await f.c.report({ key: f.key });
+  assert.equal(report.status, 'BLOCKED_ROUTING');
+  assert.equal(report.routing_status, 'routing_blocked');
+  assert.deepEqual(report.pending, []);
+  assert.deepEqual(report.subtasks.fix.routing_audit.calls.map(c => c.call_id), ['call-1', 'adequacy-unavailable']);
+  assert.equal(report.subtasks.fix.routing_audit.status, 'blocked');
+  const restarted = new Controller({ root: f.root, ask: f.c.ask, collect: f.c.collect, now: f.c.now });
+  f.c = restarted;
+  await assert.rejects(ready(f), /plan already exists/);
+  assert.equal(f.calls.length, 2);
+  await assert.rejects(f.c.finalize({ key: f.key, evidence_hash: report.evidence_hash, reviewer: 'parent', findings: [], evidence_refs: ['review:blocked'] }), /routing.*blocked/);
+});
+
+test('adequacy and role compatibility independently fail closed with no compensating tradeoff', async t => {
+  for (const [field, value] of [
+    ['route_adequate', 0.79], ['role_scope_compatible', 0.79],
+    ['route_adequate', 0], ['role_scope_compatible', 0],
+    ['route_adequate', undefined], ['role_scope_compatible', undefined],
+    ['route_adequate', NaN], ['role_scope_compatible', 1.01],
+  ]) {
+    const f = fixture(t, { [field]: value === undefined ? {} : { noul: value } });
+    await assert.rejects(ready(f), new RegExp(field));
+    const report = await f.c.report({ key: f.key });
+    assert.equal(report.status, 'BLOCKED_ROUTING');
+    assert.deepEqual(report.pending, []);
+    assert.equal(report.subtasks.fix.routing_audit.calls.length, 2);
+  }
+});
+
+test('invalid nominations stop before adequacy and preserve available call evidence', async t => {
+  for (const answer of [
+    { choice: 'route_0', confidence: NaN }, { choice: 'route_0', confidence: -0.01 },
+    { choice: 'route_0', confidence: 1.01 }, { choice: 'route_0', confidence: '0.9' },
+    { choice: 'route_0' }, { choice: 'other', confidence: 1 }, { choice: 'invented-route', confidence: 1 },
+  ]) {
+    const f = fixture(t, { assignment: answer });
+    await assert.rejects(ready(f), /assignment/);
+    assert.equal(f.calls.length, 1);
+    const report = await f.c.report({ key: f.key });
+    assert.deepEqual(report.pending, []);
+    assert.equal(report.subtasks.fix.routing_audit.calls[0].call_id, 'call-1');
+  }
+});
+
+test('Skill selection keeps its independent .2/.8 gates and blocks an uncertain .72 before adequacy', async t => {
+  const f = fixture(t, { assignment: { choice: 'route_0', confidence: 0.21 }, skill_testing: { noul: 0.72 } });
+  await assert.rejects(ready(f), /skill testing/);
+  assert.equal(f.calls.length, 1);
+  const report = await f.c.report({ key: f.key });
+  assert.deepEqual(report.pending, []);
+  assert.equal(report.subtasks.fix.routing_audit.skill_validation[0].noul, 0.72);
+  assert.equal(report.subtasks.fix.routing_audit.status, 'blocked');
+});
+
+test('parent-admitted single role is required; Jev does not grant or infer role authority', async t => {
+  const f = fixture(t); delete f.capabilities.role_scope_admitted;
+  await assert.rejects(ready(f), /role.*admi/i);
+  assert.equal(f.calls.length, 0);
+  const g = fixture(t); g.capabilities.roles.push('architect');
+  await assert.rejects(ready(g), /single.*role/i);
+  assert.equal(g.calls.length, 0);
+});
+
+test('adequacy answers cannot change the canonical nominated assignment', async t => {
+  const f = fixture(t);
+  const ask = f.c.ask;
+  f.c.ask = async request => {
+    const response = await ask(request);
+    if (request.options.battery === 'codex-route-adequacy') response.answers.assignment = { choice: 'invented-route', confidence: 1 };
+    return response;
+  };
+  await assert.rejects(ready(f), /adequacy.*answer/i);
+  const report = await f.c.report({ key: f.key });
+  assert.deepEqual(report.pending, []);
+  assert.equal(report.subtasks.fix.routing_audit.selected_route.id, 'route_0');
+});
+
+test('monitor low confidence still pauses even after an admitted low-confidence nomination', async t => {
+  const f = fixture(t, { assignment: { choice: 'route_0', confidence: 0.21 }, disposition: { choice: 'continue', confidence: 0.74 } });
+  await running(f);
+  const r = await f.c.event({ key: f.key, event: { id: 'uncertain-monitor', native_agent_id: 'native-1', subtask_id: 'fix', phase: 'progress', kind: 'tool', summary: 'Uncertain progress', evidence_refs: ['log:1'] } });
+  assert.equal(r.events['uncertain-monitor'].verdict, 'inspect');
+  assert.match(r.events['uncertain-monitor'].reason, /insufficient confidence/);
+  assert.equal(r.pending[0].kind, 'interrupt');
 });
 test('missing egress, stale capabilities, unavailable Jev and unknown routes never dispatch', async t => {
   const f = fixture(t);

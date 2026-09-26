@@ -129,6 +129,27 @@ function source(value, allowed, label) {
   return cloned;
 }
 
+function graphIdentity(graph, project_id, revision) {
+  const scope = Object.hasOwn(graph, 'scope') ? graph.scope : 'project';
+  if (scope !== 'project' && scope !== 'skill_corpus') fail('INVALID_GRAPH_SCOPE', 'Graph scope must be project or skill_corpus');
+  if (scope === 'project') {
+    if (Object.hasOwn(graph, 'corpus_id') || Object.hasOwn(graph, 'provenance_sha256')) {
+      fail('GRAPH_SCOPE_MISMATCH', 'Corpus identity must not be presented as a project graph');
+    }
+    if (graph.project_id !== project_id || graph.revision !== revision) fail('IDENTITY_MISMATCH', 'Graph project/revision does not match this context request');
+    return { scope, project_id, revision };
+  }
+  if (Object.hasOwn(graph, 'project_id')) fail('GRAPH_SCOPE_MISMATCH', 'A Skill corpus must have its own corpus_id, not a project_id');
+  const corpus_id = text(graph.corpus_id, 'gitnexus.corpus_id');
+  const corpusRevision = text(graph.revision, 'gitnexus.revision');
+  if (typeof graph.provenance_sha256 !== 'string' || !/^[a-fA-F0-9]{64}$/.test(graph.provenance_sha256)) {
+    fail('INVALID_CORPUS_PROVENANCE', 'A Skill corpus requires a 64-hex provenance_sha256');
+  }
+  // This is a validated host-provided provenance claim, not a verification of
+  // the corpus/index bytes. Never replace its revision with the target HEAD.
+  return { scope, corpus_id, revision: corpusRevision, provenance_sha256: graph.provenance_sha256 };
+}
+
 function skillName(content) {
   const match = /^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(content);
   if (!match) fail('INVALID_SKILL_METADATA', 'SKILL.md requires YAML frontmatter');
@@ -188,8 +209,12 @@ async function verifySkill(skill) {
 
 /**
  * Each source is {name, operation, ...hostProvenance}. Skill source operation is
- * skills/list; graph operation is query or context. Graph identity must match the
- * supplied project/revision exactly. Empty fresh inventories remain empty.
+ * skills/list; graph operation is query or context. Default/explicit project
+ * scope requires the exact target project_id/revision. A skill_corpus scope
+ * instead requires its own corpus_id/revision/provenance_sha256 and must omit
+ * project_id. Its evidence is about that frozen Skill corpus, never target code
+ * coverage, Skill availability, or a permission grant. Empty inventories remain
+ * empty. Host provenance claims are not independently authenticated here.
  * maxAgeMs is bounded to one hour and defaults to five minutes.
  */
 export async function collectContext(input) {
@@ -210,7 +235,7 @@ export async function collectContext(input) {
   // raw payload has passed bounds, so redaction cannot hide an oversized input.
   const snapshots = boundedJson({ liveSkills: input.liveSkills, gitnexus: input.gitnexus });
   const { liveSkills, gitnexus } = snapshots;
-  if (gitnexus.project_id !== project_id || gitnexus.revision !== revision) fail('IDENTITY_MISMATCH', 'Graph project/revision does not match this context request');
+  const identity = graphIdentity(gitnexus, project_id, revision);
   const skillsObserved = freshness(liveSkills.observed_at, now, maxAgeMs, 'liveSkills');
   const graphObserved = freshness(gitnexus.observed_at, now, maxAgeMs, 'gitnexus');
   const skillsSource = source(liveSkills.source, ['skills/list'], 'liveSkills.source');
@@ -242,9 +267,9 @@ export async function collectContext(input) {
   }
   const result = {
     project_id, revision, observed_at: new Date(now).toISOString(), skills,
-    graph: { source: graphSource, revision, observed_at: graphObserved, results: boundedJson(gitnexus.results, { sanitize: true }) },
+    graph: { ...identity, source: graphSource, observed_at: graphObserved, results: boundedJson(gitnexus.results, { sanitize: true }) },
     provenance: {
-      snapshot_authenticity: 'host-provided-unverified', skill_files: 'locally-read-sha256', graph_trust: 'data-only',
+      snapshot_authenticity: 'host-provided-unverified', skill_files: 'locally-read-sha256', graph_trust: 'data-only', graph_authority: 'no-permission-grant',
       skills_observed_at: skillsObserved, skills_source: skillsSource, sanitization: 'known-secret-patterns-only',
     },
   };
