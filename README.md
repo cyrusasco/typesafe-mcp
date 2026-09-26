@@ -2,20 +2,13 @@
 
 <p align="center"><img src="docs/pipeline.svg" alt="typesafe-dispatch pipeline: Gate → ts_feasible → Battery #1 → ts_decide → dispatch (+skill suggestion) → guarded subagent → verify → report, with a JSONL ledger under everything" width="880"></p>
 
-**What is this?** A ZCode / Claude Code / Codex plugin that gates multi-agent dispatch with TypeSafe System One (Jev) typed judgments instead of vibes: one batched ~1s call decides workflow, executor, risk and difficulty; a 79-skill catalog two-stage suggests which skill to load; a mid-work guard stops a subagent the moment an action goes off-spec (on_spec ≤ 0.35); every judgment lands in a replayable JSONL ledger. Simple requests bypass everything (GATE).
+**TypeSafe System One (Jev) routing and monitoring for agent work.** v1.9 adds a dedicated Codex control plane: parent English plan → Jev hardness/model/effort/role/Skill choices using live capability and GitNexus evidence → native child execution → receipt-backed monitoring/correction → parent evidence review.
 
+The Codex workflow is **not a context compactor**. Every governed command is submitted to Jev; the legacy ZCode GATE/bypass rule is not carried into the Codex adapter. Existing Skills stay at their canonical paths. Global model/account settings and existing plugin/MCP ownership are unchanged.
 
-**TypeSafe System One dispatch pipeline as a multi-target agent plugin** — one
-self-contained `plugin/` ships to **ZCode**, **Claude Code**, and **Codex
-CLI**: typed subagent routing (Battery #1), deterministic thresholds,
-destructive-op guard, usage ledger. Zero-dependency stdio MCP server (node 18+,
-plain fetch, node:crypto) wrapping the [TypeSafe](https://typesafe.ai) System
-One API (Jev), plus the executor registry and skill for the
-`typesafe-dispatch` pipeline.
+**Delivery boundary:** the implementation and offline tests are in this repo. The control plane returns an action outbox that the parent host must execute through its real native tools; an MCP server cannot magically spawn or monitor its parent host. Packaged lifecycle hooks are advisory, not whole-process enforcement. Live Jev/GitNexus access, actual child model settings, effective permissions and deployment require separate observed receipts. Do not infer those from fixture tests.
 
-JSON-RPC 2.0 over stdio, one message per line. The plugin is fully
-self-contained: server, launcher, skill, hook, and default data files all ship
-inside `plugin/`.
+See [Codex protocol and exact boundaries](plugin/codex/PROTOCOL.md), [Codex Skill](plugin/skills/typesafe-codex/SKILL.md), and [v1.9 changes](docs/V1_9_CHANGELOG.md). Legacy ZCode/Claude workflows remain separate; their historical narrative below is not a Codex acceptance claim. Node 22+ is the tested baseline; no runtime dependencies.
 
 ## Install — ZCode
 
@@ -50,38 +43,21 @@ with `claude plugin validate`) and wires, with no extra steps:
 
 Then bring your own TypeSafe API key — see [API key](#api-key) below.
 
-## Install — Codex CLI
+## Package — Codex Desktop / CLI
 
-Codex has no plugin system, so two pieces:
+Codex supports plugins and trusted lifecycle hooks. Build a separate, self-contained Codex artifact so legacy ZCode Skills/hooks do not leak into the new host workflow:
 
-1. **Skill** — via the [skills CLI](https://github.com/vercel-labs/skills)
-   (verified: it discovers `typesafe-dispatch` in this repo):
+```text
+node scripts/package-codex.mjs <absolute-new-output-directory>
+```
 
-   ```
-   npx skills add cyrusasco/typesafe-mcp --skill typesafe-dispatch
-   ```
+The output contains `.codex-plugin/plugin.json`, `.mcp.json`, `skills/typesafe-codex/`, `hooks/hooks.json`, and the allowlisted runtime modules. It contains no credentials or user state. Existing output paths are rejected. Building does not install, trust hooks, modify Codex config, or launch Codex. Use your host's supported local-plugin installation flow and review hook trust before enabling it.
 
-   Select **Codex** as the target when prompted (installs into
-   `~/.codex/skills/`; add `-g` for global). Without the CLI, copy
-   `plugin/skills/typesafe-dispatch/` into `~/.codex/skills/typesafe-dispatch/`
-   manually.
+The Codex server entrypoint is `codex/server.mjs` **inside that output artifact**. It exposes eight `ts_codex_*` tools and uses the parent native bridge described in the [protocol](plugin/codex/PROTOCOL.md). It deliberately does not expose the legacy executor dispatcher as a substitute.
 
-2. **MCP server** — add to `~/.codex/config.toml` (stdio; use the path of your
-   clone of this repo, forward slashes on Windows):
+Codex auth belongs to TypeSafe only: place `TYPESAFE_API_KEY=...` in `~/.codex/typesafe/.env`, or supply it through the server environment. `TYPESAFE_DATA_DIR` overrides that directory; `TYPESAFE_CODEX_STATE_DIR` optionally overrides its scoped controller state directory. Do not put API keys in repo files, MCP arguments or prompts. `ts_codex_health` reports key presence, not authentication success. No credentials are copied from any other product.
 
-   ```toml
-   [mcp_servers.typesafe]
-   command = "node"
-   args = ["<repo>/plugin/server.mjs"]
-   ```
-
-   Set `TYPESAFE_API_KEY` in your environment (or drop a `.env` next to
-   `plugin/server.mjs` — copy `plugin/.env.example`). Without a key the server
-   still starts: `ts_ask` returns `{mode:"degraded", reason:"no_key"}` and
-   never calls the API, while `ts_decide` / `ts_safety` / `ts_feasible` /
-   `ts_ping` work fully offline. Codex has no hook mechanism — the
-   UserPromptSubmit reminder does not apply; invoke the skill (or its GATE)
-   yourself.
+The source documents current supported hooks at [Codex hooks](https://learn.chatgpt.com/docs/hooks). Per-child pre-action interception is **not** claimed: generic tool hook input has a parent session ID, not a distinct child identity, and not all tool paths use hooks.
 
 ## API key
 
@@ -96,7 +72,7 @@ API). Set it either way:
   directory so your `.env` + ledger survive plugin-cache refreshes.
 
 Key resolution order: `process.env` → `<data dir>/.env` → `<plugin dir>/.env`
-→ `~/.claude/settings.json` env block. Values are never logged.
+. No cross-product settings fallback. Values are never logged.
 
 ### Data layout (where your stuff lives)
 

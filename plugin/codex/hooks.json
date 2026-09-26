@@ -1,0 +1,6 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/codex/lifecycle.mjs\"", "timeout": 5}]}],
+    "SubagentStart": [{"hooks": [{"type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/codex/lifecycle.mjs\"", "timeout": 5}]}]
+  }
+}
