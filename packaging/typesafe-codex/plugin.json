@@ -1,0 +1,20 @@
+{
+  "name": "typesafe-codex",
+  "version": "1.9.0",
+  "description": "Jev-governed Codex routing, GitNexus/Skill context, native-agent correction outbox and evidence review.",
+  "author": {
+    "name": "cyrusasco"
+  },
+  "license": "MIT",
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "TypeSafe Jev for Codex",
+    "shortDescription": "Route and monitor Codex work with Jev.",
+    "longDescription": "English plans, live capability routing, original Skill references, GitNexus context, receipt-backed correction, and parent evidence review. Native host bridge and trusted hooks required; source packaging does not activate the integration.",
+    "developerName": "cyrusasco",
+    "category": "Productivity",
+    "capabilities": [],
+    "defaultPrompt": "Use the typesafe-codex workflow for this task."
+  }
+}
