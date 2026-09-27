@@ -17,9 +17,18 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const target = path.join(here, "server.mjs");
-if (!fs.existsSync(target)) {
-  process.stderr.write(`[typesafe-mcp] launcher: ${target} not found — plugin install is broken/incomplete\n`);
+// Same resolution order as the cache-copy launcher: server beside this launcher
+// → marketplace root beside the version dir → TYPESAFE_SERVER_PATH override
+// (portable; local installs pin the absolute repo path in the cache copy's env
+// instead of hardcoding it here).
+const candidates = [
+  path.join(here, "server.mjs"),
+  path.resolve(here, "..", "server.mjs"),
+  process.env.TYPESAFE_SERVER_PATH,
+].filter(Boolean);
+const target = candidates.find((p) => fs.existsSync(p));
+if (!target) {
+  process.stderr.write(`[typesafe-mcp] launcher: server.mjs not found in ${candidates.join(" ; ")} — plugin install is broken/incomplete\n`);
   process.exit(1);
 }
 
