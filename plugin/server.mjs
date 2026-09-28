@@ -21,8 +21,7 @@
  *   answer:  { model, answers: {id:{...}}, usage: {input_tokens, output_tokens} }
  *
  * Key resolution order (value NEVER logged): process.env.TYPESAFE_API_KEY →
- * <DATA_DIR>/.env → <this dir>/.env → ~/.claude/settings.json env block
- * (fast-jev fallback).
+ * <DATA_DIR>/.env → <this dir>/.env. Other products' account files are never read.
  *
  * DATA_DIR (operational data: ledger/, .env, executors.json, patterns.json):
  *   1. process.env.TYPESAFE_DATA_DIR (explicit override);
@@ -43,7 +42,7 @@ import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 const NAME = "typesafe-mcp";
-const VERSION = "1.1.0";
+const VERSION = "1.9.0";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SYSTEM_ONE_URL = "https://api.typesafe.ai/v1/systemone";
 const DEFAULTS = { model: "jev-latest", cap: 200000, timeoutMs: 5000, maxRetries: 2 };
@@ -97,11 +96,6 @@ export function resolveApiKey() {
   if (process.env.TYPESAFE_API_KEY) return process.env.TYPESAFE_API_KEY;
   const k = dotenv().TYPESAFE_API_KEY;
   if (k) return k;
-  try {
-    const p = path.join(os.homedir(), ".claude", "settings.json");
-    const k2 = JSON.parse(fs.readFileSync(p, "utf8"))?.env?.TYPESAFE_API_KEY;
-    if (k2) return k2;
-  } catch { /* settings unreadable — fall through */ }
   return null;
 }
 
@@ -125,22 +119,22 @@ export function loadConfig(overrides = {}) {
 
 // ------------------------------------------------------------------ patterns.json
 function loadPatterns() {
-  let raw = {};
   try {
-    raw = JSON.parse(fs.readFileSync(path.join(DATA_DIR, "patterns.json"), "utf8"));
+    const raw = JSON.parse(fs.readFileSync(path.join(DATA_DIR, "patterns.json"), "utf8"));
+    const compile = (rules, global) => {
+      if (!Array.isArray(rules) || !rules.length) throw new Error("non-empty redaction and destructive regex lists required");
+      return rules.map((r) => {
+        const src = typeof r === "string" ? r : r?.pattern;
+        if (typeof src !== "string" || !src) throw new Error("invalid regex pattern");
+        const flags = [...new Set(String((typeof r === "object" && r.flags) || "").replace(/[gy]/g, "") + (global ? "g" : ""))].join("");
+        return { name: (typeof r === "object" && r.name) || src.slice(0, 24), re: new RegExp(src, flags) };
+      });
+    };
+    return { redaction: compile(raw.redaction?.regexes, true), destructive: compile(raw.destructive?.regexes, false) };
   } catch (e) {
-    log(`patterns.json unreadable: ${e.message} — running with EMPTY pattern sets`);
+    // Missing/invalid safety config is not evidence that an action or egress is safe.
+    throw new Error(`patterns.json unavailable or invalid: ${e.message}`);
   }
-  const compile = (rules, global) =>
-    (rules ?? []).map((r) => {
-      const src = typeof r === "string" ? r : r.pattern;
-      const flags = ((typeof r === "object" && r.flags) || "") + (global ? "g" : "");
-      return { name: (typeof r === "object" && r.name) || src.slice(0, 24), re: new RegExp(src, flags) };
-    });
-  return {
-    redaction: compile(raw.redaction?.regexes, true),
-    destructive: compile(raw.destructive?.regexes, false),
-  };
 }
 
 // ------------------------------------------------------------------ helpers
@@ -372,7 +366,7 @@ export async function tsAsk(args, cfg = loadConfig()) {
   // same-payload re-ask dedupe (v1.5.1): sessions showed an ask→schema-reject→re-ask
   // handshake re-sending identical payloads 12–27s apart. Key = state+questions BOTH —
   // hashing questions alone would wrongly cache fixed-question/different-state batteries (judge).
-  const dedupeKey = sha256(canonicalJson(rState.value) + "\u0000" + canonicalJson(rQuestions.value));
+  const dedupeKey = sha256(canonicalJson({ model: cfg.model, url: cfg.url, state: rState.value, questions: rQuestions.value }));
   const hit = dedupeRead()[dedupeKey];
   if (hit && Date.now() - hit.at < DEDUPE_TTL_MS) {
     appendLedger(cfg.ledgerDir, {
@@ -746,7 +740,7 @@ export async function tsJudgeAction(args, cfg = loadConfig()) {
     },
     options: { battery: "guard-judge", lang: /[\u4e00-\u9fff]/.test(spec + action) ? "cjk" : "en" },
   }, cfg);
-  if (r.mode !== "normal") return { mode: "degraded", reason: r.reason ?? r.error, directive: "proceed" };
+  if (r.mode !== "normal") return { mode: "degraded", reason: r.reason ?? r.error, verdict: "inspect", directive: "Pause monitored work: Jev is unavailable. Parent inspection is required; this is not approval to proceed." };
   const onSpec = r.answers.on_spec?.noul ?? 0.5;
   const reversible = r.answers.reversible?.noul ?? 0.5;
   // same bands as ts_decide defaults: ≤0.35 off-spec, ≥0.65 on-spec, between = deadband

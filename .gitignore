@@ -5,3 +5,5 @@ skills-exclude.json
 tmp/
 dedupe-cache.json
 progress.html
+# Generated output, never credentials or private evidence
+/dist/

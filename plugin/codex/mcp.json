@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "typesafe_codex": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/codex/server.mjs"]
+    }
+  }
+}

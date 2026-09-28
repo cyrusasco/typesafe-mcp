@@ -2,15 +2,15 @@
 /**
  * subagent-guard.mjs — PreToolUse 即時守衛(A 路徑)。
  * 
- * 淨係守 subagent session(payload.session_id 以 sess_subagent_ 開頭先理;
- * 冇 session_id / 主 session → exit 0 放行,fail-open)。Matcher 掛 Bash|Edit|Write。
+ * Explicit agent_id binding first; sess_subagent_* IDs are legacy-only.
+ * A parent's session_id is not the child identity. Codex uses its scoped adapter.
  *
  * 判斷次序:
  *   1. destructive deterministic 檢查(ts_safety patterns)→ 中即 block(唔使 Jev)
  *   2. spec 由 ~/.zcode/typesafe-state/ 讀:spec-<sessionId>.json,冇就由
  *      pending-specs.json FIFO claim(主 agent dispatch 前用 guard-spec.mjs push)
- *      冇 spec → exit 0(未 guarded 嘅 dispatch 唔騷擾)
- *   3. Jev 一個 batched ts_ask:on_spec Noul + reversible Noul(degraded → 放行)
+ *      冇 spec → exit 0 (legacy unguarded dispatch, NOT a monitored success)
+ *   3. Jev 一個 batched ts_ask:on_spec Noul + reversible Noul(degraded → block)
  *   4. on_spec ≤ 0.35 → block(exit 2 + stderr reason)= 即時更正;
  *      strikes ≥ 3 → block 並叫佢停手 report
  *
@@ -19,7 +19,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { tsSafety, tsAsk } from "../plugin/server.mjs";
+import { tsSafety, tsAsk } from "../server.mjs";
 
 const STATE_DIR = path.join(os.homedir(), ".zcode", "typesafe-state");
 const BLOCK_THRESHOLD = 0.35; // on_spec ≤ 此值 = 離題,即時更正
@@ -29,21 +29,26 @@ let raw = "";
 process.stdin.setEncoding("utf8");
 for await (const chunk of process.stdin) raw += chunk;
 
-let input = {};
-try { input = raw.trim() ? JSON.parse(raw) : {}; } catch { process.exit(0); }
-
 const BLOCK = (reason) => { process.stderr.write(`[subagent-guard] ${reason}\n`); process.exit(2); };
+let input = {};
+try { input = raw.trim() ? JSON.parse(raw) : {}; } catch { BLOCK("Invalid hook payload; guard unavailable."); }
 
-const sessionId = String(input.session_id ?? input.sessionId ?? "");
-if (!sessionId.startsWith("sess_subagent")) process.exit(0); // 主 session / 冇 id → 唔守
+const legacyId = String(input.session_id ?? input.sessionId ?? "");
+const explicitAgentId = input.agent_id ?? input.agentId;
+const sessionId = String(explicitAgentId ?? (legacyId.startsWith("sess_subagent") ? legacyId : ""));
+if (!sessionId) process.exit(0); // no child identity; never pretend a parent UUID is a child
+if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(sessionId)) BLOCK("Invalid child identity.");
 
 const tool = String(input.tool_name ?? input.toolName ?? "");
 const toolInput = input.tool_input ?? input.toolInput ?? {};
-const action = tool === "Bash" ? String(toolInput.command ?? "") : JSON.stringify(toolInput).slice(0, 500);
+const shell = ["Bash", "shell", "exec_command", "command/exec"].includes(tool);
+const action = shell ? String(toolInput.command ?? toolInput.cmd ?? "") : JSON.stringify(toolInput);
 if (!action || action === "{}") process.exit(0);
 
 // 1. deterministic destructive 檢查(永遠 fail-closed)
-const safety = tsSafety({ text: tool === "Bash" ? action : `${tool} ${action}` });
+let safety;
+try { safety = tsSafety({ text: shell ? action : `${tool} ${action}` }); }
+catch { BLOCK("Safety patterns unavailable; no action approved."); }
 if (safety.destructive) {
   BLOCK(`DESTRUCTIVE 檢測(${safety.matched.join(", ")}):破壞性操作必須先用戶確認,冇例外。移除呢步或者問用戶。`);
 }
@@ -54,6 +59,9 @@ let guard;
 try {
   guard = JSON.parse(fs.readFileSync(specFile, "utf8"));
 } catch {
+  if (explicitAgentId !== undefined) {
+    BLOCK("Explicit child has no valid spec binding; pause and bind this child before monitored work.");
+  }
   const pending = path.join(STATE_DIR, "pending-specs.json");
   try {
     const q = JSON.parse(fs.readFileSync(pending, "utf8"));
@@ -68,17 +76,14 @@ try {
   try { guard = JSON.parse(fs.readFileSync(specFile, "utf8")); } catch { /* 用 claim 嗰份 */ }
 }
 
-// read-only Bash 唔經 Jev:錯嘅 read 冇後果,唔值得冒 false-positive 都要即時擋
-const READ_ONLY = /^\s*(grep|egrep|rg|ls|dir|cat|head|tail|wc|stat|file|find|which|where|whoami|pwd|date|echo|printf|diff|cmp|test|true|false|node\s+--check|git\s+(status|log|diff|show|branch))\b/i;
-const MUTATION_HINT = /(>|>>|\bsed\s+-i|\btee\b|\bmkdir\b|\brm\b|\bmv\b|\bcp\b|\btouch\b|\bchmod\b|\bcurl\b|\bnpm\s+(i|install|ci)\b|\bgit\s+(add|commit|push|pull|checkout|reset|merge|rebase))/i;
-if (tool === "Bash" && READ_ONLY.test(action) && !MUTATION_HINT.test(action)) process.exit(0);
-
-// 3. Jev 判斷(degraded → fail-open 放行;destructive 上面已擋)
-const result = await tsAsk({
+// Prefix matching is not a shell parser: even `echo ...; node ...` needs review.
+if (action.length > 12000) BLOCK("Action exceeds legacy guard context; parent review required (no silent truncation).");
+let result;
+try { result = await tsAsk({
   state: {
     task_spec: guard.spec ?? guard,
     constraints: guard.constraints ?? [],
-    proposed_action: { tool, detail: action.slice(0, 600) },
+    proposed_action: { tool, detail: action },
     previous_blocks: guard.strikes ?? 0,
   },
   questions: {
@@ -96,13 +101,13 @@ const result = await tsAsk({
     },
   },
   options: { battery: "subagent-guard", lang: (guard.spec && /[\u4e00-\u9fff]/.test(String(guard.spec))) ? "cjk" : "en" },
-});
+}); } catch { BLOCK("Jev unavailable; pause monitored work and report to parent."); }
 
-if (result.mode !== "normal") process.exit(0); // TS 冇回應 → 放行(destructive 已擋)
+if (result.mode !== "normal") BLOCK("Jev unavailable; pause monitored work and report to parent.");
 
 const onSpec = result.answers?.on_spec?.noul;
 const reversible = result.answers?.reversible?.noul;
-if (typeof onSpec !== "number") process.exit(0);
+if (!Number.isFinite(onSpec) || onSpec < 0 || onSpec > 1) BLOCK("Invalid Jev judgement; parent inspection required.");
 
 if (onSpec <= BLOCK_THRESHOLD) {
   const strikes = (guard.strikes ?? 0) + 1;
